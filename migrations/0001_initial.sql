@@ -1,0 +1,3 @@
+-- Initial empty migration
+-- This migration is a placeholder for the database schema.
+-- Actual tables will be added in subsequent migrations.

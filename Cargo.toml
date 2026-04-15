@@ -30,3 +30,13 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1.36", features = ["serde"] }
 garde = { version = "0.22", features = ["derive"] }
+
+# Database
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "migrate"] }
+
+# Configuration
+config = "0.15"
+dotenvy = "0.15"
+
+# Async runtime
+tokio = { version = "1.52", features = ["full"] }
