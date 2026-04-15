@@ -103,6 +103,7 @@ crates/
 
 ### Dependencies
 - Use Context7 MCP to verify you are using up-to-date API patterns for all external crates.
+- When adding new dependencies, resolve the library ID with Context7 first, then query the docs for current version numbers and usage patterns.
 - Prefer well-maintained crates with high download counts. Avoid unmaintained or obscure dependencies.
 - Run `cargo audit` to check for known vulnerabilities in dependencies.
 
@@ -151,9 +152,10 @@ crates/
 
 ## Current status
 
-### Phase 0: Scaffolding — NOT STARTED
-- [ ] Cargo workspace with all crates (api, domain, db, importer, price-fetcher)
-- [ ] `.gitattributes` (LF line endings, xlsx binary)
+### Phase 0: Scaffolding — IN PROGRESS
+- [x] Cargo workspace with all crates (api, domain, db, importer, price-fetcher)
+- [x] `.gitattributes` (LF line endings, xlsx binary)
+- [x] `.env.example` with all config parameters
 - [ ] docker-compose (backend + PostgreSQL)
 - [ ] Axum server boots, /health and /ready respond
 - [ ] sqlx-cli configured, first empty migration runs

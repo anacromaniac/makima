@@ -1,6 +1,32 @@
-[package]
-name = "makima"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+authors = ["anacromaniac"]
+license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
+# Domain types (shared)
+domain = { path = "crates/domain" }
+
+# Database layer
+db = { path = "crates/db" }
+
+# API layer
+api = { path = "crates/api" }
+
+# Feature crates
+importer = { path = "crates/importer" }
+price-fetcher = { path = "crates/price-fetcher" }
+
+# External dependencies (latest versions from Context7)
+uuid = { version = "1.18", features = ["v7", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.36", features = ["serde"] }
+garde = { version = "0.22", features = ["derive"] }

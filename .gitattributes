@@ -1,0 +1,6 @@
+# Force LF line endings for text files
+* text=auto eol=lf
+
+# Excel files are binary
+*.xlsx binary
+*.xls binary
