@@ -41,7 +41,7 @@ crates/
 - Use `thiserror` for domain error types, map to HTTP errors in `api` with `IntoResponse`.
 - Prefer `impl` blocks over free functions.
 - All public types derive `Debug, Clone, Serialize, Deserialize` unless there's a reason not to.
-- Use `Uuid` (v7) for all primary keys.
+- Use `Uuid` (v7) for all primary keys. The `uuid` crate only has the `v7` feature enabled — always use `Uuid::now_v7()`, never `Uuid::new_v4()`.
 - Use `rust_decimal::Decimal` for all monetary/financial amounts. Never use f32/f64 for money.
 - Use `chrono::DateTime<Utc>` for timestamps, `chrono::NaiveDate` for dates.
 - Run `cargo fmt` and `cargo clippy -- -D warnings` before committing. Both must pass with zero warnings.
@@ -171,10 +171,10 @@ crates/
 - [x] CORS middleware
 - [x] OpenAPI/Swagger UI served at /swagger-ui
 
-### Phase 1: Domain model — NOT STARTED
+### Phase 1: Domain model — DONE
 - [x] All domain structs, enums, error types in `domain` crate
-- [ ] BrokerImporter trait definition
-- [ ] Unit tests for core domain logic
+- [x] BrokerImporter trait definition
+- [x] Unit tests for core domain logic
 
 ### Phase 2: Features — NOT STARTED
 - [ ] 2a: Auth (users, register, login, JWT, middleware)
