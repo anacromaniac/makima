@@ -1,0 +1,12 @@
+### Health check
+# Returns 200 if the service is running
+GET http://localhost:3000/health
+
+### Readiness check
+# Returns 200 if database is reachable, 503 otherwise
+GET http://localhost:3000/ready
+
+### Health check with compression
+# Request with Accept-Encoding header
+GET http://localhost:3000/health
+Accept-Encoding: gzip

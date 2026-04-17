@@ -40,3 +40,6 @@ dotenvy = "0.15"
 
 # Async runtime
 tokio = { version = "1.52", features = ["full"] }
+
+# Logging
+tracing = "0.1"

@@ -60,6 +60,9 @@ crates/
 ### Dependencies
 - Use `rustls` for TLS everywhere. Never use `native-tls` or `openssl`. This ensures musl/Alpine compatibility and avoids C library dependencies.
 - Disable default features on crates that default to `native-tls` (e.g. `reqwest`, `sqlx`) and explicitly enable `rustls` features.
+- tower-http features: use specific compression features (`compression-gzip`, `compression-deflate`) instead of generic `compression`.
+- tower-http `util` feature is required for `ServiceBuilderExt` extension methods.
+- TimeoutLayer::new() is deprecated; use `TimeoutLayer::with_status_code()` instead.
 
 ### Database
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).
@@ -79,11 +82,13 @@ crates/
 - Error responses: `{ "code": "VALIDATION_ERROR", "message": "human readable description" }`.
 - All dates are `NaiveDate` (YYYY-MM-DD). All timestamps are `DateTime<Utc>`.
 - Use `garde` derive macros on all request DTOs.
+- Middleware stack order in `ServiceBuilder` is outermost-to-innermost (first added = outermost).
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
 - `.env.example` committed to repo with all parameters and placeholder values.
 - `.env` is gitignored. Developers copy `.env.example` to `.env` for local use.
+- **Quoting**: Values containing spaces or special characters (like cron expressions) should be quoted in `.env` files to avoid parsing errors by dotenvy.
 - Docker production uses `env_file` directive pointing to a local `.env` on the Pi.
 
 ---
@@ -117,6 +122,7 @@ crates/
 - Never log passwords, password hashes, JWT tokens, refresh tokens, or API keys.
 - Implement `Debug` manually for types containing sensitive fields, masking the values (e.g. `password_hash: [REDACTED]`).
 - Request IDs (from RequestIdLayer) must be included in all log entries for traceability.
+- **Initialization order**: `.env` must be loaded BEFORE `tracing_subscriber::init()`, otherwise `RUST_LOG` won't be read.
 
 ---
 
@@ -158,11 +164,11 @@ crates/
 - [x] `.gitattributes` (LF line endings, xlsx binary)
 - [x] `.env.example` with all config parameters
 - [x] docker-compose (backend + PostgreSQL)
-- [ ] Axum server boots, /health and /ready respond
+- [x] Axum server boots, /health and /ready respond
 - [x] sqlx-cli configured, first empty migration runs
-- [ ] tracing + structured JSON logging
+- [x] tracing + structured JSON logging
 - [x] Configuration loading from env/file
-- [ ] CORS middleware
+- [x] CORS middleware
 - [ ] OpenAPI/Swagger UI served at /swagger-ui
 
 ### Phase 1: Domain model — NOT STARTED
