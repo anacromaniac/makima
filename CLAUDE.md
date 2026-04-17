@@ -172,7 +172,7 @@ crates/
 - [x] OpenAPI/Swagger UI served at /swagger-ui
 
 ### Phase 1: Domain model — NOT STARTED
-- [ ] All domain structs, enums, error types in `domain` crate
+- [x] All domain structs, enums, error types in `domain` crate
 - [ ] BrokerImporter trait definition
 - [ ] Unit tests for core domain logic
 
