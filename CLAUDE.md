@@ -64,6 +64,7 @@ crates/
 ### Database
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).
 - Migrations are embedded in the binary via `sqlx::migrate!()` and run automatically on startup.
+- **Migration path resolution**: In a Cargo workspace, `sqlx::migrate!()` resolves paths relative to the crate's `Cargo.toml`, not the workspace root. For the api crate located at `crates/api/`, use `sqlx::migrate!("../../migrations")` to reference migrations at the project root. When building with Docker, ensure the `migrations` directory is copied into the build context.
 - Use PostgreSQL `NUMERIC` type for financial amounts, mapped to `rust_decimal::Decimal`.
 - Column naming: `snake_case`. Table naming: plural `snake_case` (e.g. `transactions`, `price_history`).
 - Every table has `id UUID PRIMARY KEY`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
@@ -156,11 +157,11 @@ crates/
 - [x] Cargo workspace with all crates (api, domain, db, importer, price-fetcher)
 - [x] `.gitattributes` (LF line endings, xlsx binary)
 - [x] `.env.example` with all config parameters
-- [ ] docker-compose (backend + PostgreSQL)
+- [x] docker-compose (backend + PostgreSQL)
 - [ ] Axum server boots, /health and /ready respond
-- [ ] sqlx-cli configured, first empty migration runs
+- [x] sqlx-cli configured, first empty migration runs
 - [ ] tracing + structured JSON logging
-- [ ] Configuration loading from env/file
+- [x] Configuration loading from env/file
 - [ ] CORS middleware
 - [ ] OpenAPI/Swagger UI served at /swagger-ui
 
