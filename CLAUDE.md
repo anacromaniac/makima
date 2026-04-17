@@ -169,7 +169,7 @@ crates/
 - [x] tracing + structured JSON logging
 - [x] Configuration loading from env/file
 - [x] CORS middleware
-- [ ] OpenAPI/Swagger UI served at /swagger-ui
+- [x] OpenAPI/Swagger UI served at /swagger-ui
 
 ### Phase 1: Domain model — NOT STARTED
 - [ ] All domain structs, enums, error types in `domain` crate
