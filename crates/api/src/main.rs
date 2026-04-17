@@ -28,11 +28,26 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 /// Embedded migrations using `sqlx::migrate!()`.
 /// Migrations are located in the `migrations/` directory at the project root.
 /// Path is relative to this crate's Cargo.toml location (crates/api/).
 static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+
+/// OpenAPI specification for the Makima API.
+#[derive(OpenApi)]
+#[openapi(
+    paths(health, ready),
+    components(schemas(HealthResponse, ReadyResponse)),
+    info(
+        title = "Makima API",
+        version = "0.1.0",
+        description = "Investment tracking backend API"
+    )
+)]
+struct ApiDoc;
 
 /// Application configuration loaded from environment variables.
 #[derive(Debug)]
@@ -95,14 +110,14 @@ impl AppConfig {
 }
 
 /// Health check response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 struct HealthResponse {
     /// Health status.
     status: String,
 }
 
 /// Readiness check response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 struct ReadyResponse {
     /// Readiness status.
     status: String,
@@ -111,6 +126,13 @@ struct ReadyResponse {
 /// Handler for the `/health` endpoint.
 ///
 /// Returns 200 if the service is running. This is a liveness check.
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service is healthy", body = HealthResponse)
+    )
+)]
 #[tracing::instrument]
 async fn health() -> impl IntoResponse {
     Json(HealthResponse {
@@ -122,6 +144,14 @@ async fn health() -> impl IntoResponse {
 ///
 /// Returns 200 if the database is reachable, 503 otherwise.
 /// This is a readiness check.
+#[utoipa::path(
+    get,
+    path = "/ready",
+    responses(
+        (status = 200, description = "Service is ready", body = ReadyResponse),
+        (status = 503, description = "Service is unavailable", body = ReadyResponse)
+    )
+)]
 #[tracing::instrument(skip(pool))]
 async fn ready(State(pool): State<sqlx::PgPool>) -> impl IntoResponse {
     match sqlx::query_scalar::<_, i32>("SELECT 1")
@@ -258,6 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(pool)
         .layer(middleware)
         .layer(axum::middleware::from_fn(security_headers_middleware));

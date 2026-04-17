@@ -10,3 +10,10 @@ GET http://localhost:3000/ready
 # Request with Accept-Encoding header
 GET http://localhost:3000/health
 Accept-Encoding: gzip
+
+### OpenAPI JSON spec
+# Returns the raw OpenAPI 3.0 JSON specification
+GET http://localhost:3000/api-doc/openapi.json
+
+### Swagger UI
+# Open in browser: http://localhost:3000/swagger-ui

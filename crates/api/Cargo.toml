@@ -34,6 +34,10 @@ axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "compression-gzip", "compression-deflate", "cors", "request-id", "timeout", "limit", "util"] }
 
+# OpenAPI
+utoipa = "5.4"
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+
 # Structured logging
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
