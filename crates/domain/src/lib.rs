@@ -12,3 +12,12 @@
 //! - No framework dependencies (no sqlx, no axum)
 //! - No database dependencies
 //! - Pure Rust code focused on business rules
+
+pub mod error;
+pub mod models;
+pub mod traits;
+
+// Convenience re-exports — consumers can write `domain::User` instead of
+// `domain::models::user::User`.
+pub use error::DomainError;
+pub use models::*;
