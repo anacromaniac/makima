@@ -16,10 +16,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use application::{
-    assets::{AssetService, AssetTickerLookup},
+    assets::{AssetPriceBackfill, AssetService, AssetTickerLookup},
     auth::AuthService,
     portfolios::PortfolioService,
     positions::PositionService,
+    prices::{CurrentPriceLookup, PriceService},
     transactions::{
         AssetMetadataLookup, ExchangeRateLookup, ResolvedAssetMetadata, TransactionService,
     },
@@ -56,6 +57,10 @@ pub trait AssetReferenceLookup: AssetTickerLookup + AssetMetadataLookup {}
 
 impl<T> AssetReferenceLookup for T where T: AssetTickerLookup + AssetMetadataLookup {}
 
+pub trait PriceAdapters: CurrentPriceLookup + AssetPriceBackfill {}
+
+impl<T> PriceAdapters for T where T: CurrentPriceLookup + AssetPriceBackfill {}
+
 struct OpenFigiTickerLookup {
     client: OpenFigiClient,
 }
@@ -90,6 +95,76 @@ struct YahooExchangeRateLookup {
 impl ExchangeRateLookup for YahooExchangeRateLookup {
     async fn lookup_rate_to_eur(&self, currency: &str) -> Option<rust_decimal::Decimal> {
         self.client.lookup_exchange_rate(currency, "EUR").await
+    }
+}
+
+struct YahooCurrentPriceLookup {
+    client: YahooFinanceClient,
+}
+
+#[async_trait::async_trait]
+impl CurrentPriceLookup for YahooCurrentPriceLookup {
+    async fn fetch_current_price(
+        &self,
+        asset_id: uuid::Uuid,
+        ticker: &str,
+    ) -> Result<domain::NewPriceRecord, domain::DomainError> {
+        self.client.fetch_current_price(asset_id, ticker).await
+    }
+}
+
+struct YahooPriceBackfill {
+    client: YahooFinanceClient,
+    price_repo: Arc<dyn domain::PriceRepository>,
+}
+
+#[async_trait::async_trait]
+impl AssetPriceBackfill for YahooPriceBackfill {
+    async fn backfill_asset_prices(
+        &self,
+        asset_id: uuid::Uuid,
+        ticker: &str,
+    ) -> Result<u64, domain::DomainError> {
+        let years = std::env::var("BACKFILL_YEARS")
+            .ok()
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(5);
+
+        price_fetcher::backfill::backfill_asset(
+            self.price_repo.clone(),
+            &self.client,
+            asset_id,
+            ticker,
+            years,
+        )
+        .await
+    }
+}
+
+struct YahooPriceAdapters {
+    current: YahooCurrentPriceLookup,
+    backfill: YahooPriceBackfill,
+}
+
+#[async_trait::async_trait]
+impl CurrentPriceLookup for YahooPriceAdapters {
+    async fn fetch_current_price(
+        &self,
+        asset_id: uuid::Uuid,
+        ticker: &str,
+    ) -> Result<domain::NewPriceRecord, domain::DomainError> {
+        self.current.fetch_current_price(asset_id, ticker).await
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetPriceBackfill for YahooPriceAdapters {
+    async fn backfill_asset_prices(
+        &self,
+        asset_id: uuid::Uuid,
+        ticker: &str,
+    ) -> Result<u64, domain::DomainError> {
+        self.backfill.backfill_asset_prices(asset_id, ticker).await
     }
 }
 
@@ -167,6 +242,18 @@ pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
         OpenFigiClient::from_env().expect("failed to construct OpenFIGI client from environment");
     let yahoo_client = YahooFinanceClient::from_env()
         .expect("failed to construct Yahoo Finance client from environment");
+    let price_repo = Arc::new(db::repositories::price_repo::PgPriceRepository::new(
+        pool.clone(),
+    ));
+    let price_adapters = Arc::new(YahooPriceAdapters {
+        current: YahooCurrentPriceLookup {
+            client: yahoo_client.clone(),
+        },
+        backfill: YahooPriceBackfill {
+            client: yahoo_client.clone(),
+            price_repo,
+        },
+    });
     build_app_state_with_lookup(
         pool,
         jwt_secret,
@@ -176,19 +263,22 @@ pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
         Arc::new(YahooExchangeRateLookup {
             client: yahoo_client,
         }),
+        price_adapters,
     )
 }
 
 /// Build the shared application state with injected external lookup adapters.
-pub fn build_app_state_with_lookup<L, E>(
+pub fn build_app_state_with_lookup<L, E, P>(
     pool: sqlx::PgPool,
     jwt_secret: String,
     asset_reference_lookup: Arc<L>,
     exchange_rate_lookup: Arc<E>,
+    price_adapters: Arc<P>,
 ) -> AppState
 where
     L: AssetReferenceLookup + 'static,
     E: ExchangeRateLookup + 'static,
+    P: PriceAdapters + 'static,
 {
     let user_repo = Arc::new(db::repositories::user_repo::PgUserRepository::new(
         pool.clone(),
@@ -203,6 +293,9 @@ where
     let position_repo = Arc::new(db::repositories::position_repo::PgPositionRepository::new(
         pool.clone(),
     ));
+    let price_repo = Arc::new(db::repositories::price_repo::PgPriceRepository::new(
+        pool.clone(),
+    ));
     let transaction_repo =
         Arc::new(db::repositories::transaction_repo::PgTransactionRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(
@@ -213,9 +306,15 @@ where
     let asset_service = Arc::new(AssetService::new(
         asset_repo.clone(),
         asset_reference_lookup.clone(),
+        price_adapters.clone(),
     ));
     let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo.clone()));
     let position_service = Arc::new(PositionService::new(portfolio_repo.clone(), position_repo));
+    let price_service = Arc::new(PriceService::new(
+        asset_repo.clone(),
+        price_repo,
+        price_adapters,
+    ));
     let transaction_service = Arc::new(TransactionService::new(
         portfolio_repo,
         asset_repo,
@@ -231,6 +330,7 @@ where
         asset_service,
         portfolio_service,
         position_service,
+        price_service,
         transaction_service,
         user_service,
         jwt_secret,
@@ -280,6 +380,9 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         assets::handlers::get_asset,
         assets::handlers::create_asset,
         assets::handlers::update_asset,
+        assets::handlers::refresh_asset_price,
+        assets::handlers::put_manual_asset_price,
+        assets::handlers::list_asset_price_history,
         portfolios::handlers::list_portfolios,
         portfolios::handlers::create_portfolio,
         portfolios::handlers::get_portfolio,
@@ -303,8 +406,11 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         users::dto::UserResponse,
         assets::dto::CreateAssetRequest,
         assets::dto::UpdateAssetRequest,
+        assets::dto::ManualPriceEntryRequest,
+        assets::dto::PriceRecordResponse,
         assets::dto::AssetResponse,
         assets::handlers::PaginatedAssetResponse,
+        assets::handlers::PaginatedPriceHistoryResponse,
         assets::handlers::PaginationMetaResponse,
         portfolios::dto::CreatePortfolioRequest,
         portfolios::dto::UpdatePortfolioRequest,

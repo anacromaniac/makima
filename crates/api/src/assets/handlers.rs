@@ -1,6 +1,6 @@
-//! HTTP handlers for shared asset CRUD endpoints.
+//! HTTP handlers for shared asset CRUD and price endpoints.
 
-use application::assets::AssetError;
+use application::{assets::AssetError, prices::PriceError};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -13,7 +13,10 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    assets::dto::{ApiAssetClass, AssetResponse, CreateAssetRequest, UpdateAssetRequest},
+    assets::dto::{
+        ApiAssetClass, AssetResponse, CreateAssetRequest, ManualPriceEntryRequest,
+        PriceRecordResponse, UpdateAssetRequest,
+    },
     auth::AuthenticatedUser,
     state::AppState,
 };
@@ -69,6 +72,64 @@ impl IntoResponse for AssetHandlerError {
 
 impl From<AssetError> for AssetHandlerError {
     fn from(error: AssetError) -> Self {
+        Self::Service(error)
+    }
+}
+
+fn price_error_response(error: PriceError) -> Response {
+    let (status, code, message): (StatusCode, &'static str, String) = match error {
+        PriceError::NotFound => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "Asset not found".to_string(),
+        ),
+        PriceError::MissingYahooTicker => (
+            StatusCode::BAD_REQUEST,
+            "MISSING_YAHOO_TICKER",
+            "Asset does not have a Yahoo Finance ticker".to_string(),
+        ),
+        PriceError::ExternalService(error) => {
+            (StatusCode::BAD_GATEWAY, "EXTERNAL_SERVICE_ERROR", error)
+        }
+        PriceError::Repository(error) => {
+            tracing::error!("Price repository error: {error}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Internal server error".to_string(),
+            )
+        }
+    };
+
+    (
+        status,
+        Json(serde_json::json!({ "code": code, "message": message })),
+    )
+        .into_response()
+}
+
+/// Unified error for asset-price handlers.
+#[derive(Debug)]
+pub(crate) enum AssetPriceHandlerError {
+    Validation(String),
+    Service(PriceError),
+}
+
+impl IntoResponse for AssetPriceHandlerError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Validation(message) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "code": "VALIDATION_ERROR", "message": message })),
+            )
+                .into_response(),
+            Self::Service(error) => price_error_response(error),
+        }
+    }
+}
+
+impl From<PriceError> for AssetPriceHandlerError {
+    fn from(error: PriceError) -> Self {
         Self::Service(error)
     }
 }
@@ -150,11 +211,75 @@ impl From<PaginatedResult<domain::Asset>> for PaginatedAssetResponse {
     }
 }
 
+/// Query parameters for price-history requests.
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct AssetPriceHistoryQuery {
+    /// Page number (1-based, default 1).
+    #[serde(default = "default_page")]
+    pub page: u32,
+    /// Items per page (default 25, max 100).
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+    /// Optional inclusive lower bound.
+    pub from_date: Option<chrono::NaiveDate>,
+    /// Optional inclusive upper bound.
+    pub to_date: Option<chrono::NaiveDate>,
+}
+
+impl AssetPriceHistoryQuery {
+    fn pagination(&self) -> PaginationParams {
+        PaginationParams {
+            page: self.page.max(1),
+            limit: self.limit.clamp(1, 100),
+        }
+    }
+}
+
+/// Paginated price-history response.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[schema(title = "PaginatedPriceHistoryResponse")]
+pub struct PaginatedPriceHistoryResponse {
+    /// Price-history rows on the current page.
+    pub data: Vec<PriceRecordResponse>,
+    /// Pagination metadata.
+    pub pagination: PaginationMetaResponse,
+}
+
+impl From<PaginatedResult<domain::PriceRecord>> for PaginatedPriceHistoryResponse {
+    fn from(result: PaginatedResult<domain::PriceRecord>) -> Self {
+        Self {
+            data: result
+                .data
+                .into_iter()
+                .map(PriceRecordResponse::from)
+                .collect(),
+            pagination: PaginationMetaResponse {
+                page: result.pagination.page,
+                limit: result.pagination.limit,
+                total_items: result.pagination.total_items,
+                total_pages: result.pagination.total_pages,
+            },
+        }
+    }
+}
+
 /// Build the assets sub-router mounted under `/api/v1/assets`.
 pub fn assets_router() -> Router<AppState> {
     Router::new()
         .route("/api/v1/assets", get(list_assets).post(create_asset))
         .route("/api/v1/assets/{isin}", get(get_asset).put(update_asset))
+        .route(
+            "/api/v1/assets/{isin}/refresh-price",
+            axum::routing::post(refresh_asset_price),
+        )
+        .route(
+            "/api/v1/assets/{isin}/price",
+            axum::routing::put(put_manual_asset_price),
+        )
+        .route(
+            "/api/v1/assets/{isin}/price-history",
+            get(list_asset_price_history),
+        )
 }
 
 /// List shared assets with pagination and optional filters.
@@ -287,4 +412,101 @@ pub(crate) async fn update_asset(
         .await?;
 
     Ok(Json(AssetResponse::from(asset)))
+}
+
+/// Force a Yahoo price refresh for a single asset.
+#[utoipa::path(
+    post,
+    path = "/api/v1/assets/{isin}/refresh-price",
+    params(("isin" = String, Path, description = "Asset ISIN")),
+    responses(
+        (status = 200, description = "Refreshed price", body = PriceRecordResponse),
+        (status = 400, description = "Validation or missing Yahoo ticker"),
+        (status = 401, description = "Missing or invalid token"),
+        (status = 404, description = "Asset not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "assets"
+)]
+#[tracing::instrument(skip(state, _auth_user))]
+pub(crate) async fn refresh_asset_price(
+    State(state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Path(isin): Path<String>,
+) -> Result<Json<PriceRecordResponse>, AssetPriceHandlerError> {
+    application::assets::is_valid_isin(&isin, &())
+        .map_err(|error| AssetPriceHandlerError::Validation(error.to_string()))?;
+
+    let record = state.price_service.refresh(&isin).await?;
+    Ok(Json(PriceRecordResponse::from(record)))
+}
+
+/// Insert or override a manual daily close price for a single asset.
+#[utoipa::path(
+    put,
+    path = "/api/v1/assets/{isin}/price",
+    params(("isin" = String, Path, description = "Asset ISIN")),
+    request_body = ManualPriceEntryRequest,
+    responses(
+        (status = 200, description = "Stored manual price", body = PriceRecordResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid token"),
+        (status = 404, description = "Asset not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "assets"
+)]
+#[tracing::instrument(skip(state, _auth_user))]
+pub(crate) async fn put_manual_asset_price(
+    State(state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Path(isin): Path<String>,
+    Json(body): Json<ManualPriceEntryRequest>,
+) -> Result<Json<PriceRecordResponse>, AssetPriceHandlerError> {
+    application::assets::is_valid_isin(&isin, &())
+        .map_err(|error| AssetPriceHandlerError::Validation(error.to_string()))?;
+    body.validate()
+        .map_err(|error| AssetPriceHandlerError::Validation(error.to_string()))?;
+
+    let record = state
+        .price_service
+        .store_manual_price(&isin, body.date, body.close_price, body.currency)
+        .await?;
+
+    Ok(Json(PriceRecordResponse::from(record)))
+}
+
+/// List stored price history for a single asset.
+#[utoipa::path(
+    get,
+    path = "/api/v1/assets/{isin}/price-history",
+    params(
+        ("isin" = String, Path, description = "Asset ISIN"),
+        AssetPriceHistoryQuery
+    ),
+    responses(
+        (status = 200, description = "Paginated price history", body = PaginatedPriceHistoryResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid token"),
+        (status = 404, description = "Asset not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "assets"
+)]
+#[tracing::instrument(skip(state, _auth_user))]
+pub(crate) async fn list_asset_price_history(
+    State(state): State<AppState>,
+    _auth_user: AuthenticatedUser,
+    Path(isin): Path<String>,
+    Query(query): Query<AssetPriceHistoryQuery>,
+) -> Result<Json<PaginatedPriceHistoryResponse>, AssetPriceHandlerError> {
+    application::assets::is_valid_isin(&isin, &())
+        .map_err(|error| AssetPriceHandlerError::Validation(error.to_string()))?;
+
+    let result = state
+        .price_service
+        .list_history(&isin, query.from_date, query.to_date, &query.pagination())
+        .await?;
+
+    Ok(Json(PaginatedPriceHistoryResponse::from(result)))
 }

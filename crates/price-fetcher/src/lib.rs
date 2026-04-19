@@ -14,5 +14,7 @@
 //! - Periodic job scheduling via tokio-cron-scheduler
 //! - Rate limiting and retry logic for API calls
 
+pub mod backfill;
+pub mod job;
 pub mod openfigi;
 pub mod yahoo;

@@ -177,6 +177,31 @@ impl AssetRepository for PgAssetRepository {
         })
     }
 
+    async fn list_in_use(&self) -> Result<Vec<Asset>, RepositoryError> {
+        let rows = sqlx::query_as::<_, AssetRow>(
+            "SELECT DISTINCT
+                a.id,
+                a.isin,
+                a.yahoo_ticker,
+                a.name,
+                a.asset_class::text AS asset_class,
+                a.currency,
+                a.exchange,
+                a.created_at,
+                a.updated_at
+             FROM assets a
+             INNER JOIN transactions t ON t.asset_id = a.id
+             ORDER BY a.name ASC, a.created_at ASC, a.id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        rows.into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     async fn update(&self, id: Uuid, update: &UpdateAsset) -> Result<Asset, RepositoryError> {
         let now = Utc::now();
 

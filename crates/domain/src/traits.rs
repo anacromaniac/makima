@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::error::{DomainError, RepositoryError};
 use crate::models::{
-    Asset, AssetFilters, NewAsset, NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult,
-    PaginationParams, Portfolio, Position, RefreshToken, Transaction, TransactionFilters,
-    UpdateAsset, UpdateTransaction, User,
+    Asset, AssetFilters, NewAsset, NewPortfolio, NewPriceRecord, NewRefreshToken, NewTransaction,
+    PaginatedResult, PaginationParams, Portfolio, Position, PriceRecord, RefreshToken, Transaction,
+    TransactionFilters, UpdateAsset, UpdateTransaction, User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -84,6 +84,12 @@ pub trait AssetRepository: Send + Sync {
         filters: &AssetFilters,
     ) -> Result<PaginatedResult<Asset>, RepositoryError>;
 
+    /// List shared assets that are currently held in at least one portfolio.
+    ///
+    /// Assets without transactions are excluded. The result is intended for
+    /// scheduled price-update jobs and similar internal workflows.
+    async fn list_in_use(&self) -> Result<Vec<Asset>, RepositoryError>;
+
     /// Update the mutable fields of an asset identified by primary key.
     async fn update(&self, id: Uuid, update: &UpdateAsset) -> Result<Asset, RepositoryError>;
 
@@ -93,6 +99,33 @@ pub trait AssetRepository: Send + Sync {
         id: Uuid,
         yahoo_ticker: Option<&str>,
     ) -> Result<(), RepositoryError>;
+}
+
+/// Persistent storage operations for asset price history.
+#[async_trait]
+pub trait PriceRepository: Send + Sync {
+    /// Insert or update a single daily price record for an asset.
+    async fn insert(
+        &self,
+        new_price_record: &NewPriceRecord,
+    ) -> Result<PriceRecord, RepositoryError>;
+
+    /// Insert or update a batch of daily price records for an asset.
+    ///
+    /// Returns the number of stored rows.
+    async fn insert_batch(&self, records: &[NewPriceRecord]) -> Result<u64, RepositoryError>;
+
+    /// Return the latest available daily price for an asset.
+    async fn find_latest(&self, asset_id: Uuid) -> Result<Option<PriceRecord>, RepositoryError>;
+
+    /// Return a paginated slice of price history for an asset.
+    async fn find_by_range(
+        &self,
+        asset_id: Uuid,
+        from_date: Option<chrono::NaiveDate>,
+        to_date: Option<chrono::NaiveDate>,
+        pagination: &PaginationParams,
+    ) -> Result<PaginatedResult<PriceRecord>, RepositoryError>;
 }
 
 /// Persistent storage operations for transactions.

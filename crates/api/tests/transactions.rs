@@ -8,7 +8,8 @@ use domain::AssetClass;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use support::{
-    StaticAssetReferenceLookup, StaticExchangeRateLookup, TestApp, expired_access_token, json_value,
+    StaticAssetReferenceLookup, StaticExchangeRateLookup, StaticPriceAdapters, TestApp,
+    expired_access_token, json_value,
 };
 use uuid::Uuid;
 
@@ -76,6 +77,7 @@ async fn test_create_transaction_auto_creates_asset_and_uses_exchange_rate_looku
             "USD",
             Decimal::new(92, 2),
         )])),
+        Arc::new(StaticPriceAdapters::empty()),
     )
     .await;
     let auth = app
@@ -250,6 +252,7 @@ async fn test_list_get_update_and_delete_transactions_work_with_filters() {
             "USD",
             Decimal::new(91, 2),
         )])),
+        Arc::new(StaticPriceAdapters::empty()),
     )
     .await;
     let auth = app

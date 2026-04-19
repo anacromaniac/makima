@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use application::{
     assets::AssetService, auth::AuthService, portfolios::PortfolioService,
-    positions::PositionService, transactions::TransactionService, users::UserService,
+    positions::PositionService, prices::PriceService, transactions::TransactionService,
+    users::UserService,
 };
 
 /// Application state available to all request handlers via [`axum::extract::State`].
@@ -24,6 +25,8 @@ pub struct AppState {
     pub portfolio_service: Arc<PortfolioService>,
     /// Derived position workflows.
     pub position_service: Arc<PositionService>,
+    /// Asset price workflows.
+    pub price_service: Arc<PriceService>,
     /// Transaction workflows.
     pub transaction_service: Arc<TransactionService>,
     /// User profile workflows.

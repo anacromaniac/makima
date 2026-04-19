@@ -7,6 +7,7 @@ use domain::{
     Asset, AssetFilters, AssetRepository, NewAsset, PaginatedResult, PaginationParams,
     RepositoryError, UpdateAsset,
 };
+use uuid::Uuid;
 
 /// Lookup adapter used to map an ISIN to a Yahoo Finance ticker.
 #[async_trait]
@@ -14,6 +15,17 @@ pub trait AssetTickerLookup: Send + Sync {
     /// Return the mapped Yahoo Finance ticker, or `None` when no mapping is
     /// available or the upstream service fails.
     async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String>;
+}
+
+/// Backfill adapter used when a Yahoo ticker becomes available for an asset.
+#[async_trait]
+pub trait AssetPriceBackfill: Send + Sync {
+    /// Fetch and store historical prices for the given asset.
+    async fn backfill_asset_prices(
+        &self,
+        asset_id: Uuid,
+        ticker: &str,
+    ) -> Result<u64, domain::DomainError>;
 }
 
 /// Errors that can occur during asset operations.
@@ -35,14 +47,20 @@ pub enum AssetError {
 pub struct AssetService {
     repo: Arc<dyn AssetRepository>,
     ticker_lookup: Arc<dyn AssetTickerLookup>,
+    price_backfill: Arc<dyn AssetPriceBackfill>,
 }
 
 impl AssetService {
     /// Create a new asset service.
-    pub fn new(repo: Arc<dyn AssetRepository>, ticker_lookup: Arc<dyn AssetTickerLookup>) -> Self {
+    pub fn new(
+        repo: Arc<dyn AssetRepository>,
+        ticker_lookup: Arc<dyn AssetTickerLookup>,
+        price_backfill: Arc<dyn AssetPriceBackfill>,
+    ) -> Self {
         Self {
             repo,
             ticker_lookup,
+            price_backfill,
         }
     }
 
@@ -55,13 +73,19 @@ impl AssetService {
                 .await;
         }
 
-        self.repo
+        let asset = self
+            .repo
             .create(&new_asset)
             .await
             .map_err(|error| match error {
                 RepositoryError::Conflict(_) => AssetError::DuplicateIsin,
                 other => AssetError::Repository(other),
-            })
+            })?;
+
+        self.try_backfill_if_ticker_available(asset.id, asset.yahoo_ticker.as_deref())
+            .await;
+
+        Ok(asset)
     }
 
     /// List shared assets with pagination and optional filters.
@@ -86,16 +110,46 @@ impl AssetService {
 
     /// Update an existing asset by ISIN.
     pub async fn update(&self, isin: &str, update: UpdateAsset) -> Result<Asset, AssetError> {
-        let asset = self
+        let existing_asset = self
             .repo
             .find_by_isin(isin)
             .await?
             .ok_or(AssetError::NotFound)?;
 
-        self.repo
-            .update(asset.id, &update)
+        let updated_asset = self
+            .repo
+            .update(existing_asset.id, &update)
             .await
-            .map_err(Into::into)
+            .map_err(AssetError::from)?;
+
+        if existing_asset.yahoo_ticker.is_none() && updated_asset.yahoo_ticker.is_some() {
+            self.try_backfill_if_ticker_available(
+                updated_asset.id,
+                updated_asset.yahoo_ticker.as_deref(),
+            )
+            .await;
+        }
+
+        Ok(updated_asset)
+    }
+
+    async fn try_backfill_if_ticker_available(&self, asset_id: Uuid, ticker: Option<&str>) {
+        let Some(ticker) = ticker else {
+            return;
+        };
+
+        if let Err(error) = self
+            .price_backfill
+            .backfill_asset_prices(asset_id, ticker)
+            .await
+        {
+            tracing::warn!(
+                asset_id = %asset_id,
+                ticker,
+                error = %error,
+                "price-history backfill failed"
+            );
+        }
     }
 }
 

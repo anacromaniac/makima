@@ -1,8 +1,9 @@
 //! Request and response DTOs for asset endpoints.
 
-use chrono::{DateTime, Utc};
-use domain::Asset;
+use chrono::{DateTime, NaiveDate, Utc};
+use domain::{Asset, PriceRecord, PriceSource};
 use garde::Validate;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -130,4 +131,86 @@ impl From<Asset> for AssetResponse {
             updated_at: asset.updated_at,
         }
     }
+}
+
+/// Request body for `PUT /api/v1/assets/{isin}/price`.
+#[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
+pub struct ManualPriceEntryRequest {
+    /// Observation date.
+    #[garde(skip)]
+    pub date: NaiveDate,
+    /// Closing price.
+    #[garde(custom(validate_positive_decimal))]
+    #[schema(value_type = String)]
+    pub close_price: Decimal,
+    /// Quotation currency.
+    #[garde(length(min = 3, max = 10))]
+    pub currency: String,
+}
+
+/// API representation of a single price-history record.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct PriceRecordResponse {
+    /// Unique price identifier.
+    pub id: Uuid,
+    /// Asset identifier.
+    pub asset_id: Uuid,
+    /// Observation date.
+    pub date: NaiveDate,
+    /// Closing price.
+    #[schema(value_type = String)]
+    pub close_price: Decimal,
+    /// Quotation currency.
+    pub currency: String,
+    /// Source of the price.
+    pub source: ApiPriceSource,
+}
+
+impl From<PriceRecord> for PriceRecordResponse {
+    fn from(value: PriceRecord) -> Self {
+        Self {
+            id: value.id,
+            asset_id: value.asset_id,
+            date: value.date,
+            close_price: value.close_price,
+            currency: value.currency,
+            source: value.source.into(),
+        }
+    }
+}
+
+/// API-facing price source enum.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiPriceSource {
+    /// Price fetched from Yahoo Finance.
+    Yahoo,
+    /// Price entered manually.
+    Manual,
+}
+
+impl From<PriceSource> for ApiPriceSource {
+    fn from(value: PriceSource) -> Self {
+        match value {
+            PriceSource::Yahoo => Self::Yahoo,
+            PriceSource::Manual => Self::Manual,
+        }
+    }
+}
+
+/// Paginated price-history response wrapper.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct PriceHistoryResponse {
+    /// Price-history records on the current page.
+    pub data: Vec<PriceRecordResponse>,
+    /// Pagination metadata.
+    pub pagination: crate::assets::handlers::PaginationMetaResponse,
+}
+
+fn validate_positive_decimal(value: &Decimal, _: &()) -> garde::Result {
+    if value <= &Decimal::ZERO {
+        return Err(garde::Error::new("close_price must be greater than zero"));
+    }
+
+    Ok(())
 }

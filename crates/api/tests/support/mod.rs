@@ -4,7 +4,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use api::{AppState, MIGRATOR, auth::jwt::Claims, build_app, build_app_state_with_lookup};
 use application::{
-    assets::AssetTickerLookup,
+    assets::{AssetPriceBackfill, AssetTickerLookup},
+    prices::CurrentPriceLookup,
     transactions::{AssetMetadataLookup, ExchangeRateLookup, ResolvedAssetMetadata},
 };
 use axum::{
@@ -45,6 +46,7 @@ impl TestApp {
         Self::new_with_lookups(
             Arc::new(StaticAssetReferenceLookup::empty()),
             Arc::new(StaticExchangeRateLookup::empty()),
+            Arc::new(StaticPriceAdapters::empty()),
         )
         .await
     }
@@ -55,6 +57,7 @@ impl TestApp {
         Self::new_with_lookups(
             asset_reference_lookup,
             Arc::new(StaticExchangeRateLookup::empty()),
+            Arc::new(StaticPriceAdapters::empty()),
         )
         .await
     }
@@ -62,6 +65,7 @@ impl TestApp {
     pub async fn new_with_lookups(
         asset_reference_lookup: Arc<StaticAssetReferenceLookup>,
         exchange_rate_lookup: Arc<StaticExchangeRateLookup>,
+        price_adapters: Arc<StaticPriceAdapters>,
     ) -> Self {
         let postgres = Postgres::default()
             .start()
@@ -94,6 +98,7 @@ impl TestApp {
             TEST_JWT_SECRET.to_string(),
             asset_reference_lookup,
             exchange_rate_lookup,
+            price_adapters,
         );
         let app = build_app(state.clone(), &["http://localhost:3000".to_string()]);
 
@@ -354,6 +359,65 @@ impl ExchangeRateLookup for StaticExchangeRateLookup {
         self.by_currency
             .get(&currency.to_ascii_uppercase())
             .copied()
+    }
+}
+
+pub struct StaticPriceAdapters {
+    current_prices: HashMap<String, domain::NewPriceRecord>,
+    backfill_results: HashMap<String, u64>,
+}
+
+impl StaticPriceAdapters {
+    pub fn empty() -> Self {
+        Self {
+            current_prices: HashMap::new(),
+            backfill_results: HashMap::new(),
+        }
+    }
+
+    pub fn with_current_prices(
+        entries: impl IntoIterator<Item = (impl Into<String>, domain::NewPriceRecord)>,
+    ) -> Self {
+        Self {
+            current_prices: entries
+                .into_iter()
+                .map(|(ticker, price)| (ticker.into(), price))
+                .collect(),
+            backfill_results: HashMap::new(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl CurrentPriceLookup for StaticPriceAdapters {
+    async fn fetch_current_price(
+        &self,
+        asset_id: Uuid,
+        ticker: &str,
+    ) -> Result<domain::NewPriceRecord, domain::DomainError> {
+        self.current_prices
+            .get(ticker)
+            .cloned()
+            .map(|mut price| {
+                price.asset_id = asset_id;
+                price
+            })
+            .ok_or_else(|| {
+                domain::DomainError::ExternalServiceError(format!(
+                    "no current price configured for {ticker}"
+                ))
+            })
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetPriceBackfill for StaticPriceAdapters {
+    async fn backfill_asset_prices(
+        &self,
+        _asset_id: Uuid,
+        ticker: &str,
+    ) -> Result<u64, domain::DomainError> {
+        Ok(*self.backfill_results.get(ticker).unwrap_or(&0))
     }
 }
 

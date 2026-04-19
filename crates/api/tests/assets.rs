@@ -4,9 +4,13 @@ use std::sync::Arc;
 
 use application::transactions::ResolvedAssetMetadata;
 use axum::http::{Method, StatusCode};
-use domain::AssetClass;
+use chrono::NaiveDate;
+use domain::{AssetClass, NewPriceRecord, PriceSource};
+use rust_decimal::Decimal;
 use serde_json::json;
-use support::{StaticAssetReferenceLookup, TestApp, expired_access_token, json_value};
+use support::{
+    StaticAssetReferenceLookup, StaticPriceAdapters, TestApp, expired_access_token, json_value,
+};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -251,6 +255,173 @@ async fn test_list_get_and_update_assets_support_filters_and_not_found() {
         )
         .await;
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_refresh_asset_price_stores_yahoo_price() {
+    let price_adapters = Arc::new(StaticPriceAdapters::with_current_prices([(
+        "VWCE.MI",
+        NewPriceRecord {
+            asset_id: Uuid::nil(),
+            date: NaiveDate::from_ymd_opt(2026, 4, 18).expect("static date should be valid"),
+            close_price: Decimal::new(12345, 2),
+            currency: "EUR".to_string(),
+            source: PriceSource::Yahoo,
+        },
+    )]));
+    let app = TestApp::new_with_lookups(
+        Arc::new(StaticAssetReferenceLookup::empty()),
+        Arc::new(support::StaticExchangeRateLookup::empty()),
+        price_adapters,
+    )
+    .await;
+    let auth = app
+        .register_user_ok("alice@example.com", "password123")
+        .await;
+
+    let create_response = app
+        .create_asset(
+            &auth.access_token,
+            json!({
+                "isin": "IE00BK5BQT80",
+                "name": "Vanguard FTSE All-World UCITS ETF",
+                "asset_class": "Stock",
+                "currency": "EUR",
+                "exchange": "Milan",
+                "yahoo_ticker": "VWCE.MI"
+            }),
+        )
+        .await;
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let refresh_response = app
+        .request_with_token(
+            Method::POST,
+            "/api/v1/assets/IE00BK5BQT80/refresh-price",
+            &auth.access_token,
+        )
+        .await;
+    assert_eq!(refresh_response.status(), StatusCode::OK);
+    let refresh_body = json_value(refresh_response).await;
+    assert_eq!(refresh_body["currency"], "EUR");
+    assert_eq!(refresh_body["source"], "yahoo");
+    assert_eq!(refresh_body["close_price"], "123.45000000");
+
+    let history_response = app
+        .request_with_token(
+            Method::GET,
+            "/api/v1/assets/IE00BK5BQT80/price-history",
+            &auth.access_token,
+        )
+        .await;
+    assert_eq!(history_response.status(), StatusCode::OK);
+    let history_body = json_value(history_response).await;
+    assert_eq!(history_body["pagination"]["total_items"], 1);
+    assert_eq!(history_body["data"][0]["source"], "yahoo");
+
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_refresh_asset_price_without_ticker_returns_400() {
+    let app = TestApp::new().await;
+    let auth = app
+        .register_user_ok("alice@example.com", "password123")
+        .await;
+
+    let create_response = app
+        .create_asset(
+            &auth.access_token,
+            json!({
+                "isin": "US0378331005",
+                "name": "Apple Inc.",
+                "asset_class": "Stock",
+                "currency": "USD",
+                "exchange": "NASDAQ"
+            }),
+        )
+        .await;
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let refresh_response = app
+        .request_with_token(
+            Method::POST,
+            "/api/v1/assets/US0378331005/refresh-price",
+            &auth.access_token,
+        )
+        .await;
+    assert_eq!(refresh_response.status(), StatusCode::BAD_REQUEST);
+    let body = json_value(refresh_response).await;
+    assert_eq!(body["code"], "MISSING_YAHOO_TICKER");
+
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_manual_asset_price_entry_and_filtered_history_work() {
+    let app = TestApp::new().await;
+    let auth = app
+        .register_user_ok("alice@example.com", "password123")
+        .await;
+
+    let create_response = app
+        .create_asset(
+            &auth.access_token,
+            json!({
+                "isin": "US5949181045",
+                "name": "Microsoft Corporation",
+                "asset_class": "Stock",
+                "currency": "USD",
+                "exchange": "NASDAQ",
+                "yahoo_ticker": "MSFT"
+            }),
+        )
+        .await;
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let first_price = app
+        .request_json_with_token(
+            Method::PUT,
+            "/api/v1/assets/US5949181045/price",
+            &auth.access_token,
+            json!({
+                "date": "2026-04-17",
+                "close_price": "390.10",
+                "currency": "USD"
+            }),
+        )
+        .await;
+    assert_eq!(first_price.status(), StatusCode::OK);
+
+    let second_price = app
+        .request_json_with_token(
+            Method::PUT,
+            "/api/v1/assets/US5949181045/price",
+            &auth.access_token,
+            json!({
+                "date": "2026-04-18",
+                "close_price": "392.25",
+                "currency": "USD"
+            }),
+        )
+        .await;
+    assert_eq!(second_price.status(), StatusCode::OK);
+    let second_body = json_value(second_price).await;
+    assert_eq!(second_body["source"], "manual");
+
+    let history_response = app
+        .request_with_token(
+            Method::GET,
+            "/api/v1/assets/US5949181045/price-history?page=1&limit=10&from_date=2026-04-18",
+            &auth.access_token,
+        )
+        .await;
+    assert_eq!(history_response.status(), StatusCode::OK);
+    let history_body = json_value(history_response).await;
+    assert_eq!(history_body["pagination"]["total_items"], 1);
+    assert_eq!(history_body["data"][0]["date"], "2026-04-18");
 
     app.cleanup().await;
 }

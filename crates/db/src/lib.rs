@@ -1,6 +1,6 @@
 //! # Database Crate
 //!
-//! This crate contains repository implementations, migrations, and PostgreSQL access via sqlx.
+//! This crate contains repository implementations and PostgreSQL access via sqlx.
 //! All database access goes through repository structs in this crate.
 //!
 //! ## Dependencies

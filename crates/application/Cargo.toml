@@ -15,6 +15,7 @@ chrono.workspace = true
 rust_decimal.workspace = true
 garde.workspace = true
 async-trait.workspace = true
+tracing.workspace = true
 
 # Auth and token helpers
 argon2.workspace = true

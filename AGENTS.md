@@ -127,6 +127,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - **Handler validation error pattern**: When a handler can fail with both a garde validation error and a service error, define a `pub(crate) <Feature>HandlerError` enum in `handlers.rs` that has `Validation(String)` and `Service(<Feature>Error)` variants, both implementing `IntoResponse`. Use this as the `Err` type so the handler returns a single named error type. See `portfolios/handlers.rs` → `PortfolioHandlerError` as the template.
 - **Ownership isolation**: Handlers that operate on a resource owned by a user must return 404 (not 403) when the resource does not exist *or* belongs to a different user. This prevents leaking the existence of other users' data. Implement the check in the service layer by calling `find_by_id` and filtering on `user_id`.
 - **Transaction asset auto-creation**: For transaction create/update flows, handlers pass `asset_isin` to the application service. The service is responsible for resolving the shared asset by ISIN and auto-creating it through an injected reference-data adapter when it does not exist. Keep this logic out of handlers.
+- **Asset price backfill and scheduled refresh**: When an asset gains a Yahoo ticker for the first time (during create or update), the application service is responsible for triggering best-effort historical backfill through an injected price adapter. The daily scheduled refresh job is infrastructure wiring started from `crates/api/src/main.rs` with concrete repositories and Yahoo adapters; keep cron/job setup out of handlers.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -237,7 +238,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2c: Assets (CRUD, OpenFIGI integration)
 - [x] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [x] 2e: Positions (on-the-fly calculation, closed position flag)
-- [ ] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
+- [x] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
 - [ ] 2g: Exchange rates (Yahoo Finance, daily job)
 - [ ] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)
 - [ ] 2i: Analytics (gain/loss, asset allocation)
