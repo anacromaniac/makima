@@ -9,4 +9,4 @@ pub mod position;
 
 pub use allocation::{AllocationEntry, AllocationPercent, calculate_allocation};
 pub use gain_loss::{GainLoss, calculate_gain_loss};
-pub use position::{Position, aggregate_position};
+pub use position::{AggregatedPosition, aggregate_position};

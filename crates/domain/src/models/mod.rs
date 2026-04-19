@@ -8,6 +8,7 @@ pub mod asset;
 pub mod exchange_rate;
 pub mod pagination;
 pub mod portfolio;
+pub mod position;
 pub mod price;
 pub mod refresh_token;
 pub mod transaction;
@@ -18,6 +19,7 @@ pub use asset::{Asset, AssetClass, AssetFilters, NewAsset, UpdateAsset};
 pub use exchange_rate::{ExchangeRate, NewExchangeRate};
 pub use pagination::{PaginatedResult, PaginationMeta, PaginationParams};
 pub use portfolio::{NewPortfolio, Portfolio};
+pub use position::Position;
 pub use price::{NewPriceRecord, PriceRecord, PriceSource};
 pub use refresh_token::{NewRefreshToken, RefreshToken};
 pub use transaction::{

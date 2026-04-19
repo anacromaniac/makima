@@ -5,9 +5,9 @@ use rust_decimal::Decimal;
 use crate::error::DomainError;
 use crate::models::{Transaction, TransactionType};
 
-/// Aggregated position derived from a sequence of buy/sell transactions.
+/// Aggregated holding state derived from a sequence of buy/sell transactions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Position {
+pub struct AggregatedPosition {
     /// Total quantity currently held.
     pub quantity: Decimal,
     /// Volume-weighted average cost per unit.
@@ -16,7 +16,7 @@ pub struct Position {
     pub closed: bool,
 }
 
-/// Aggregate a list of transactions into a single [`Position`].
+/// Aggregate a list of transactions into a single [`AggregatedPosition`].
 ///
 /// Only `Buy` and `Sell` transactions are considered; `Dividend` and `Coupon`
 /// entries are ignored. The average cost is computed using the weighted-average
@@ -29,7 +29,7 @@ pub struct Position {
 /// held quantity below zero (short-selling is not allowed).
 ///
 /// Returns [`DomainError::ValidationError`] if the input list is empty.
-pub fn aggregate_position(transactions: &[Transaction]) -> Result<Position, DomainError> {
+pub fn aggregate_position(transactions: &[Transaction]) -> Result<AggregatedPosition, DomainError> {
     if transactions.is_empty() {
         return Err(DomainError::ValidationError(
             "cannot aggregate an empty transaction list".into(),
@@ -76,7 +76,7 @@ pub fn aggregate_position(transactions: &[Transaction]) -> Result<Position, Doma
         Decimal::ZERO
     };
 
-    Ok(Position {
+    Ok(AggregatedPosition {
         quantity,
         average_cost,
         closed: quantity == Decimal::ZERO,

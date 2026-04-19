@@ -236,7 +236,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2.3a: Portfolio integration tests retrofit
 - [x] 2c: Assets (CRUD, OpenFIGI integration)
 - [x] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
-- [ ] 2e: Positions (on-the-fly calculation, closed position flag)
+- [x] 2e: Positions (on-the-fly calculation, closed position flag)
 - [ ] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
 - [ ] 2g: Exchange rates (Yahoo Finance, daily job)
 - [ ] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)

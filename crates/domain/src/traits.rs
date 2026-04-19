@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::error::{DomainError, RepositoryError};
 use crate::models::{
     Asset, AssetFilters, NewAsset, NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult,
-    PaginationParams, Portfolio, RefreshToken, Transaction, TransactionFilters, UpdateAsset,
-    UpdateTransaction, User,
+    PaginationParams, Portfolio, Position, RefreshToken, Transaction, TransactionFilters,
+    UpdateAsset, UpdateTransaction, User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -138,6 +138,14 @@ pub trait TransactionRepository: Send + Sync {
         portfolio_id: Uuid,
         asset_id: Uuid,
     ) -> Result<rust_decimal::Decimal, RepositoryError>;
+}
+
+/// Derived position queries built from portfolio transaction history.
+#[async_trait]
+pub trait PositionRepository: Send + Sync {
+    /// Return all positions derived from the transaction history of a portfolio.
+    async fn list_by_portfolio(&self, portfolio_id: Uuid)
+    -> Result<Vec<Position>, RepositoryError>;
 }
 
 /// Persistent storage operations for user accounts.

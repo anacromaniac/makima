@@ -21,9 +21,9 @@ pub mod traits;
 // Convenience re-exports — consumers can write `domain::User` instead of
 // `domain::models::user::User`.
 pub use error::{DomainError, RepositoryError};
-pub use logic::*;
+pub use logic::{GainLoss, aggregate_position, calculate_allocation, calculate_gain_loss};
 pub use models::*;
 pub use traits::{
-    AssetRepository, BrokerImporter, PortfolioRepository, RefreshTokenRepository,
-    TransactionRepository, UserRepository,
+    AssetRepository, BrokerImporter, PortfolioRepository, PositionRepository,
+    RefreshTokenRepository, TransactionRepository, UserRepository,
 };

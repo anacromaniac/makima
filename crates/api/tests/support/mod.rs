@@ -181,6 +181,46 @@ impl TestApp {
             .await
     }
 
+    pub async fn create_price_history_table(&self) {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS price_history (
+                id UUID PRIMARY KEY,
+                asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+                date DATE NOT NULL,
+                close_price NUMERIC(18,8) NOT NULL,
+                currency VARCHAR NOT NULL,
+                source VARCHAR NOT NULL,
+                UNIQUE(asset_id, date)
+            )",
+        )
+        .execute(&self.state.pool)
+        .await
+        .expect("failed to create price_history table");
+    }
+
+    pub async fn insert_price_history(
+        &self,
+        asset_id: Uuid,
+        date: chrono::NaiveDate,
+        close_price: Decimal,
+        currency: &str,
+        source: &str,
+    ) {
+        sqlx::query(
+            "INSERT INTO price_history (id, asset_id, date, close_price, currency, source)
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(asset_id)
+        .bind(date)
+        .bind(close_price)
+        .bind(currency)
+        .bind(source)
+        .execute(&self.state.pool)
+        .await
+        .expect("failed to insert price history row");
+    }
+
     pub async fn cleanup(mut self) {
         self.app.take();
         self.state.pool.close().await;

@@ -7,6 +7,7 @@
 pub mod assets;
 pub mod auth;
 pub mod portfolios;
+pub mod positions;
 mod state;
 pub mod transactions;
 pub mod users;
@@ -18,6 +19,7 @@ use application::{
     assets::{AssetService, AssetTickerLookup},
     auth::AuthService,
     portfolios::PortfolioService,
+    positions::PositionService,
     transactions::{
         AssetMetadataLookup, ExchangeRateLookup, ResolvedAssetMetadata, TransactionService,
     },
@@ -198,6 +200,9 @@ where
     let asset_repo = Arc::new(db::repositories::asset_repo::PgAssetRepository::new(
         pool.clone(),
     ));
+    let position_repo = Arc::new(db::repositories::position_repo::PgPositionRepository::new(
+        pool.clone(),
+    ));
     let transaction_repo =
         Arc::new(db::repositories::transaction_repo::PgTransactionRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(
@@ -210,6 +215,7 @@ where
         asset_reference_lookup.clone(),
     ));
     let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo.clone()));
+    let position_service = Arc::new(PositionService::new(portfolio_repo.clone(), position_repo));
     let transaction_service = Arc::new(TransactionService::new(
         portfolio_repo,
         asset_repo,
@@ -224,6 +230,7 @@ where
         auth_service,
         asset_service,
         portfolio_service,
+        position_service,
         transaction_service,
         user_service,
         jwt_secret,
@@ -249,6 +256,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         .merge(auth::handlers::auth_router())
         .merge(users::handlers::users_router())
         .merge(portfolios::handlers::portfolios_router())
+        .merge(positions::handlers::positions_router())
         .merge(assets::handlers::assets_router())
         .merge(transactions::handlers::transactions_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
@@ -277,6 +285,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::handlers::get_portfolio,
         portfolios::handlers::update_portfolio,
         portfolios::handlers::delete_portfolio,
+        positions::handlers::list_positions,
         transactions::handlers::list_transactions,
         transactions::handlers::create_transaction,
         transactions::handlers::get_transaction,
@@ -302,6 +311,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::dto::PortfolioResponse,
         portfolios::handlers::PaginatedPortfolioResponse,
         portfolios::handlers::PaginationMetaResponse,
+        positions::dto::PositionResponse,
         transactions::dto::CreateTransactionRequest,
         transactions::dto::UpdateTransactionRequest,
         transactions::dto::TransactionResponse,

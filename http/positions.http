@@ -1,0 +1,7 @@
+### List open positions in a portfolio
+GET http://localhost:3000/api/v1/portfolios/{{portfolio_id}}/positions
+Authorization: Bearer {{access_token}}
+
+### List positions including closed ones
+GET http://localhost:3000/api/v1/portfolios/{{portfolio_id}}/positions?show_closed=true
+Authorization: Bearer {{access_token}}

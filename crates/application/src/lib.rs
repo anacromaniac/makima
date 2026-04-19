@@ -7,5 +7,6 @@
 pub mod assets;
 pub mod auth;
 pub mod portfolios;
+pub mod positions;
 pub mod transactions;
 pub mod users;
