@@ -5,13 +5,15 @@
 //! these abstractions, never on concrete implementations (sqlx, axum, etc.).
 
 use async_trait::async_trait;
+use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::error::{DomainError, RepositoryError};
 use crate::models::{
-    Asset, AssetFilters, NewAsset, NewPortfolio, NewPriceRecord, NewRefreshToken, NewTransaction,
-    PaginatedResult, PaginationParams, Portfolio, Position, PriceRecord, RefreshToken, Transaction,
-    TransactionFilters, UpdateAsset, UpdateTransaction, User,
+    Asset, AssetFilters, ExchangeRate, NewAsset, NewExchangeRate, NewPortfolio, NewPriceRecord,
+    NewRefreshToken, NewTransaction, PaginatedResult, PaginationParams, Portfolio, Position,
+    PriceRecord, RefreshToken, Transaction, TransactionFilters, UpdateAsset, UpdateTransaction,
+    User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -128,6 +130,31 @@ pub trait PriceRepository: Send + Sync {
     ) -> Result<PaginatedResult<PriceRecord>, RepositoryError>;
 }
 
+/// Persistent storage operations for currency exchange rates.
+#[async_trait]
+pub trait ExchangeRateRepository: Send + Sync {
+    /// Insert or update a single daily FX rate.
+    async fn insert(
+        &self,
+        new_exchange_rate: &NewExchangeRate,
+    ) -> Result<ExchangeRate, RepositoryError>;
+
+    /// Return the most recent available FX rate for a currency pair.
+    async fn find_latest(
+        &self,
+        from_currency: &str,
+        to_currency: &str,
+    ) -> Result<Option<ExchangeRate>, RepositoryError>;
+
+    /// Return the FX rate for a currency pair on a specific date.
+    async fn find_by_date(
+        &self,
+        from_currency: &str,
+        to_currency: &str,
+        date: NaiveDate,
+    ) -> Result<Option<ExchangeRate>, RepositoryError>;
+}
+
 /// Persistent storage operations for transactions.
 #[async_trait]
 pub trait TransactionRepository: Send + Sync {
@@ -171,6 +198,9 @@ pub trait TransactionRepository: Send + Sync {
         portfolio_id: Uuid,
         asset_id: Uuid,
     ) -> Result<rust_decimal::Decimal, RepositoryError>;
+
+    /// Return all distinct transaction currencies currently used in persisted data.
+    async fn list_currencies_in_use(&self) -> Result<Vec<String>, RepositoryError>;
 }
 
 /// Derived position queries built from portfolio transaction history.

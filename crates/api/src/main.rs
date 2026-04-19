@@ -1,7 +1,10 @@
 //! Binary entry point for the Makima API server.
 
 use api::{AppConfig, MIGRATOR, build_app, build_app_state};
-use db::repositories::{asset_repo::PgAssetRepository, price_repo::PgPriceRepository};
+use db::repositories::{
+    asset_repo::PgAssetRepository, exchange_rate_repo::PgExchangeRateRepository,
+    price_repo::PgPriceRepository, transaction_repo::PgTransactionRepository,
+};
 use price_fetcher::{job::start_price_update_job, yahoo::YahooFinanceClient};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
@@ -50,6 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &cron_expression,
         std::sync::Arc::new(PgAssetRepository::new(pool.clone())),
         std::sync::Arc::new(PgPriceRepository::new(pool.clone())),
+        std::sync::Arc::new(PgTransactionRepository::new(pool.clone())),
+        std::sync::Arc::new(PgExchangeRateRepository::new(pool.clone())),
         yahoo_client,
     )
     .await

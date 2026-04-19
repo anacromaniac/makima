@@ -123,6 +123,63 @@ async fn test_create_transaction_auto_creates_asset_and_uses_exchange_rate_looku
     let assets_body = json_value(assets).await;
     assert_eq!(assets_body["pagination"]["total_items"], 1);
     assert_eq!(assets_body["data"][0]["isin"], "IE00BK5BQT80");
+    assert_eq!(
+        app.latest_exchange_rate("USD", "EUR").await,
+        Some(Decimal::new(92, 2))
+    );
+
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_create_transaction_uses_latest_stored_exchange_rate_when_available() {
+    let app =
+        TestApp::new_with_asset_lookup(Arc::new(StaticAssetReferenceLookup::with_assets([(
+            "US0378331005",
+            resolved_asset("US0378331005", "Apple Inc.", "USD"),
+        )])))
+        .await;
+    let auth = app
+        .register_user_ok("alice@example.com", "password123")
+        .await;
+    let portfolio = app.create_portfolio(&auth.access_token, "Core", None).await;
+    let portfolio_body = json_value(portfolio).await;
+    let portfolio_id = portfolio_body["id"].as_str().unwrap();
+
+    app.insert_exchange_rate(
+        "USD",
+        "EUR",
+        chrono::NaiveDate::from_ymd_opt(2025, 1, 9).expect("static date should be valid"),
+        Decimal::new(91, 2),
+    )
+    .await;
+    app.insert_exchange_rate(
+        "USD",
+        "EUR",
+        chrono::NaiveDate::from_ymd_opt(2025, 1, 11).expect("static date should be valid"),
+        Decimal::new(93, 2),
+    )
+    .await;
+
+    let response = app
+        .request_json_with_token(
+            Method::POST,
+            &format!("/api/v1/portfolios/{portfolio_id}/transactions"),
+            &auth.access_token,
+            json!({
+                "asset_isin": "US0378331005",
+                "transaction_type": "Buy",
+                "date": "2025-01-10",
+                "quantity": "1",
+                "unit_price": "180",
+                "currency": "USD"
+            }),
+        )
+        .await;
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = json_value(response).await;
+    assert_eq!(decimal_text(&body["exchange_rate_to_base"]), "0.93000000");
 
     app.cleanup().await;
 }

@@ -54,6 +54,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - `application` services own `Arc<dyn ...Repository>` dependencies and expose use-case methods (`AuthService`, `PortfolioService`, etc.).
 - `AppState` holds `Arc<ApplicationService>` instances, not repositories. `pool` is kept only for `/ready` health checks and migrations.
 - The concrete adapter wiring lives in the API composition layer (`build_app_state`, `build_app_state_with_lookup`) and is invoked by `crates/api/src/main.rs`.
+- `build_app_state_with_lookup` is still production composition: test-injected adapters should plug into the same repository-backed wrappers and fallback chains as runtime wiring, not bypass them with test-only shortcuts.
 
 **Service / handler separation:**
 - Application services live in `crates/application/src/<feature>.rs`. They must not import axum or sqlx. They take trait objects, return feature-specific application errors, and enforce ownership/business rules.
@@ -239,7 +240,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [x] 2e: Positions (on-the-fly calculation, closed position flag)
 - [x] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
-- [ ] 2g: Exchange rates (Yahoo Finance, daily job)
+- [x] 2g: Exchange rates (Yahoo Finance, daily job)
 - [ ] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)
 - [ ] 2i: Analytics (gain/loss, asset allocation)
 

@@ -33,8 +33,11 @@ use axum::{
     response::{IntoResponse, Json},
     routing::get,
 };
+use chrono::Utc;
+use db::repositories::exchange_rate_repo::PgExchangeRateRepository;
+use domain::{ExchangeRateRepository, NewExchangeRate};
 use price_fetcher::openfigi::OpenFigiClient;
-use price_fetcher::yahoo::YahooFinanceClient;
+use price_fetcher::{exchange::YahooExchangeRateFetcher, yahoo::YahooFinanceClient};
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::Migrator;
 use tower::ServiceBuilder;
@@ -88,13 +91,76 @@ impl AssetMetadataLookup for OpenFigiTickerLookup {
 }
 
 struct YahooExchangeRateLookup {
-    client: YahooFinanceClient,
+    fetcher: YahooExchangeRateFetcher,
 }
 
 #[async_trait::async_trait]
 impl ExchangeRateLookup for YahooExchangeRateLookup {
     async fn lookup_rate_to_eur(&self, currency: &str) -> Option<rust_decimal::Decimal> {
-        self.client.lookup_exchange_rate(currency, "EUR").await
+        self.fetcher
+            .fetch_rate(currency, "EUR")
+            .await
+            .map(|rate| rate.rate)
+            .map_err(|error| {
+                tracing::warn!(
+                    from_currency = currency.to_ascii_uppercase(),
+                    to_currency = "EUR",
+                    "live exchange-rate lookup failed: {error}"
+                );
+            })
+            .ok()
+    }
+}
+
+struct PersistedExchangeRateLookup<E> {
+    exchange_rate_repo: Arc<dyn ExchangeRateRepository>,
+    live_lookup: Arc<E>,
+}
+
+#[async_trait::async_trait]
+impl<E> ExchangeRateLookup for PersistedExchangeRateLookup<E>
+where
+    E: ExchangeRateLookup + 'static,
+{
+    async fn lookup_rate_to_eur(&self, currency: &str) -> Option<rust_decimal::Decimal> {
+        let normalized_currency = currency.to_ascii_uppercase();
+
+        match self
+            .exchange_rate_repo
+            .find_latest(&normalized_currency, "EUR")
+            .await
+        {
+            Ok(Some(rate)) => return Some(rate.rate),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(
+                    from_currency = normalized_currency,
+                    to_currency = "EUR",
+                    "stored exchange-rate lookup failed: {error}"
+                );
+            }
+        }
+
+        let rate = self
+            .live_lookup
+            .lookup_rate_to_eur(&normalized_currency)
+            .await?;
+        let new_rate = NewExchangeRate {
+            from_currency: normalized_currency,
+            to_currency: "EUR".to_string(),
+            date: Utc::now().date_naive(),
+            rate,
+        };
+
+        if let Err(error) = self.exchange_rate_repo.insert(&new_rate).await {
+            tracing::warn!(
+                from_currency = new_rate.from_currency,
+                to_currency = new_rate.to_currency,
+                "failed to persist fetched exchange rate: {error}"
+            );
+        }
+
+        Some(rate)
     }
 }
 
@@ -261,7 +327,7 @@ pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
             client: openfigi_client,
         }),
         Arc::new(YahooExchangeRateLookup {
-            client: yahoo_client,
+            fetcher: YahooExchangeRateFetcher::new(yahoo_client),
         }),
         price_adapters,
     )
@@ -296,6 +362,11 @@ where
     let price_repo = Arc::new(db::repositories::price_repo::PgPriceRepository::new(
         pool.clone(),
     ));
+    let exchange_rate_repo = Arc::new(PgExchangeRateRepository::new(pool.clone()));
+    let persisted_exchange_rate_lookup = Arc::new(PersistedExchangeRateLookup {
+        exchange_rate_repo,
+        live_lookup: exchange_rate_lookup,
+    });
     let transaction_repo =
         Arc::new(db::repositories::transaction_repo::PgTransactionRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(
@@ -320,7 +391,7 @@ where
         asset_repo,
         transaction_repo,
         asset_reference_lookup,
-        exchange_rate_lookup,
+        persisted_exchange_rate_lookup,
     ));
     let user_service = Arc::new(UserService::new(user_repo));
 

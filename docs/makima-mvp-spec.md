@@ -105,7 +105,7 @@ REST API backend written in Rust, deployed via Docker on Raspberry Pi, for track
 - Common fields: portfolio, asset (ISIN), trade date, settlement date, type, notes.
 - Buy/Sell fields: quantity, unit price, commission, transaction currency.
 - Dividend/Coupon fields: gross amount, tax withheld, net amount, currency.
-- Multi-currency: each transaction records the currency in which it occurred (EUR, USD, GBP, etc.). The exchange rate to EUR is fetched from Yahoo Finance and saved on the transaction at insertion time.
+- Multi-currency: each transaction records the currency in which it occurred (EUR, USD, GBP, etc.). At insertion time, the system first uses the latest stored rate to EUR if available, otherwise it attempts a live Yahoo Finance lookup, then saves the resolved rate on the transaction.
 - **No short selling constraint**: a Sell transaction is rejected (HTTP 400) if the sold quantity exceeds the currently held quantity for that asset in the portfolio.
 - Full CRUD on transactions. Modification/deletion recalculates positions.
 - Savings plans (PAC): no special entity. Each recurring purchase is recorded as a single Buy transaction.
@@ -136,7 +136,9 @@ REST API backend written in Rust, deployed via Docker on Raspberry Pi, for track
 
 - Fetched from Yahoo Finance (pairs like `EURUSD=X`).
 - Updated by the same daily job as prices.
+- The daily job determines which FX pairs to refresh from the distinct non-EUR currencies present in transactions and updates each currency-to-EUR rate.
 - Stored in a dedicated `exchange_rates(from_currency, to_currency, date, rate)` table.
+- Transaction creation uses the latest available stored rate for the transaction currency before falling back to a live Yahoo lookup.
 - Used to convert foreign currency transactions and positions to EUR.
 
 ### 4.8 Broker import

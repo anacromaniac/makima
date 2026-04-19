@@ -49,6 +49,25 @@ Content-Type: application/json
 
 ###
 
+### Create USD buy transaction with manual exchange rate fallback
+POST {{base_url}}/api/v1/portfolios/{{portfolio_id}}/transactions
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "asset_isin": "US0378331005",
+  "transaction_type": "Buy",
+  "date": "2025-03-10",
+  "quantity": "5",
+  "unit_price": "180",
+  "commission": "1.00",
+  "currency": "USD",
+  "exchange_rate_to_base": "0.92000000",
+  "notes": "Uses manual FX rate if no stored/live rate is available"
+}
+
+###
+
 ### Get transaction by ID
 GET {{base_url}}/api/v1/transactions/{{transaction_id}}
 Authorization: Bearer {{access_token}}

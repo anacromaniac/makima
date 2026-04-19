@@ -341,6 +341,17 @@ impl TransactionRepository for PgTransactionRepository {
 
         Ok(quantity.unwrap_or(Decimal::ZERO))
     }
+
+    async fn list_currencies_in_use(&self) -> Result<Vec<String>, RepositoryError> {
+        sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT UPPER(currency) AS currency
+             FROM transactions
+             ORDER BY UPPER(currency) ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)
+    }
 }
 
 fn transaction_type_as_str(value: TransactionType) -> &'static str {

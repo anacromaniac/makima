@@ -15,6 +15,7 @@
 //! - Rate limiting and retry logic for API calls
 
 pub mod backfill;
+pub mod exchange;
 pub mod job;
 pub mod openfigi;
 pub mod yahoo;

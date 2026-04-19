@@ -226,6 +226,48 @@ impl TestApp {
         .expect("failed to insert price history row");
     }
 
+    pub async fn insert_exchange_rate(
+        &self,
+        from_currency: &str,
+        to_currency: &str,
+        date: chrono::NaiveDate,
+        rate: Decimal,
+    ) {
+        sqlx::query(
+            "INSERT INTO exchange_rates (
+                id, from_currency, to_currency, date, rate, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())",
+        )
+        .bind(Uuid::now_v7())
+        .bind(from_currency)
+        .bind(to_currency)
+        .bind(date)
+        .bind(rate)
+        .execute(&self.state.pool)
+        .await
+        .expect("failed to insert exchange rate row");
+    }
+
+    pub async fn latest_exchange_rate(
+        &self,
+        from_currency: &str,
+        to_currency: &str,
+    ) -> Option<Decimal> {
+        sqlx::query_scalar::<_, Decimal>(
+            "SELECT rate
+             FROM exchange_rates
+             WHERE from_currency = $1 AND to_currency = $2
+             ORDER BY date DESC, id DESC
+             LIMIT 1",
+        )
+        .bind(from_currency)
+        .bind(to_currency)
+        .fetch_optional(&self.state.pool)
+        .await
+        .expect("failed to query exchange rate row")
+    }
+
     pub async fn cleanup(mut self) {
         self.app.take();
         self.state.pool.close().await;
