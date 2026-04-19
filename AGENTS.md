@@ -174,13 +174,13 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 ### Integration tests
 - Live in `crates/api/tests/`.
 - Test full request/response cycles: build the Axum app, send HTTP requests, assert status codes and JSON bodies.
-- Use a dedicated PostgreSQL test database. Each test suite runs migrations on setup and cleans up after.
+- Use a dedicated PostgreSQL test database provisioned automatically by the shared `testcontainers` harness. Each test suite runs migrations on setup and cleans up after.
 - Cover: authentication flows, CRUD operations, ownership isolation (user A cannot see user B's data), error responses for invalid input.
 - These implicitly cover the `db` layer (repositories, migrations, constraints). No separate db tests for the MVP.
 - Treat integration tests as part of each feature task's done criteria, not as a later polish pass.
 - Maintain a shared API integration harness in `crates/api/tests/` that builds the real Axum app with real repositories and test configuration.
 - Prefer one integration test file per feature (for example `auth.rs`, `users.rs`, `portfolios.rs`) instead of one large catch-all suite.
-- The harness should provision an isolated PostgreSQL database per test case or test module, run migrations, and expose helpers for common authenticated flows.
+- The harness should start PostgreSQL automatically with `testcontainers`, run migrations, and expose helpers for common authenticated flows.
 - For protected resources, the minimum coverage matrix is: happy path, validation failure, unauthenticated request, invalid token when relevant, not found, and ownership isolation when relevant.
 - New Phase 2 endpoint work is not complete until its integration tests are added or updated in the same task.
 
@@ -190,7 +190,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 
 ### Running
 - `cargo test` runs everything (unit + integration).
-- Integration tests require `DATABASE_URL` pointing to the test database.
+- Integration tests require Docker daemon access so `testcontainers` can start PostgreSQL automatically; no manual test `DATABASE_URL` is required.
 - CI pipeline: `cargo fmt --check` → `cargo clippy -- -D warnings` → `cargo test` → `cargo audit`.
 
 ### Manual testing

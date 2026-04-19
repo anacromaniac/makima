@@ -171,7 +171,7 @@ pub fn portfolios_router() -> Router<AppState> {
     tag = "portfolios"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn list_portfolios(
+pub(crate) async fn list_portfolios(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Query(pagination): Query<PaginationQuery>,
@@ -195,7 +195,7 @@ pub async fn list_portfolios(
     tag = "portfolios"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn create_portfolio(
+pub(crate) async fn create_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Json(body): Json<CreatePortfolioRequest>,
@@ -231,7 +231,7 @@ pub async fn create_portfolio(
     tag = "portfolios"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn get_portfolio(
+pub(crate) async fn get_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
@@ -256,7 +256,7 @@ pub async fn get_portfolio(
     tag = "portfolios"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn update_portfolio(
+pub(crate) async fn update_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
@@ -291,7 +291,7 @@ pub async fn update_portfolio(
     tag = "portfolios"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn delete_portfolio(
+pub(crate) async fn delete_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,

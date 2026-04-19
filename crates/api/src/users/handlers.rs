@@ -62,7 +62,7 @@ pub fn users_router() -> Router<AppState> {
     tag = "users"
 )]
 #[tracing::instrument(skip(state))]
-pub async fn get_me(
+pub(crate) async fn get_me(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
 ) -> Result<Json<UserResponse>, UserError> {

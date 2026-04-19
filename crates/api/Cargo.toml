@@ -31,7 +31,7 @@ tokio.workspace = true
 axum = { version = "0.8", features = ["macros"] }
 
 # HTTP middleware
-tower = "0.5"
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "compression-gzip", "compression-deflate", "cors", "request-id", "timeout", "limit", "util"] }
 
 # OpenAPI
@@ -47,3 +47,7 @@ rand.workspace = true
 # Structured logging
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+testcontainers = "0.27.3"
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }

@@ -105,7 +105,7 @@ pub fn auth_router() -> Router<AppState> {
     ),
     tag = "auth"
 )]
-pub async fn register(
+pub(crate) async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AuthError> {
@@ -148,7 +148,7 @@ pub async fn register(
     ),
     tag = "auth"
 )]
-pub async fn login(
+pub(crate) async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AuthError> {
@@ -188,7 +188,7 @@ pub async fn login(
     ),
     tag = "auth"
 )]
-pub async fn refresh(
+pub(crate) async fn refresh(
     State(state): State<AppState>,
     Json(payload): Json<RefreshRequest>,
 ) -> Result<impl IntoResponse, AuthError> {
@@ -227,7 +227,7 @@ pub async fn refresh(
     security(("bearer_auth" = [])),
     tag = "auth"
 )]
-pub async fn change_password(
+pub(crate) async fn change_password(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Json(payload): Json<ChangePasswordRequest>,
