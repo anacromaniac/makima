@@ -1,6 +1,7 @@
 /target
 .env
 /test_files
+http/*.private.env.json
 
 # IDE
 .idea
