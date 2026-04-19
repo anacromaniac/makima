@@ -10,3 +10,5 @@
 //! - Repository pattern: each entity has a dedicated repository module
 //! - No raw sqlx calls outside repositories
 //! - Migrations are embedded in the binary via `sqlx::migrate!()`
+
+pub mod repositories;

@@ -38,6 +38,12 @@ tower-http = { version = "0.6", features = ["trace", "compression-gzip", "compre
 utoipa = "5.4"
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
+# Auth
+argon2.workspace = true
+jsonwebtoken.workspace = true
+sha2.workspace = true
+rand.workspace = true
+
 # Structured logging
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

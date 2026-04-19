@@ -48,7 +48,7 @@ crates/
 
 ### Validation
 - Use `garde` crate for input validation via derive macros.
-- Call `.validate(&())` explicitly in handlers after extraction. Do not use axum-valid or automatic validation extractors.
+- Call `.validate()` in handlers after extraction for default context (`Context = ()`). Use `.validate_with(ctx)` only when a custom context struct is needed. Do not use axum-valid or automatic validation extractors.
 - This gives full control over error response formatting.
 
 ### Documentation
@@ -68,9 +68,11 @@ crates/
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).
 - Migrations are embedded in the binary via `sqlx::migrate!()` and run automatically on startup.
 - **Migration path resolution**: In a Cargo workspace, `sqlx::migrate!()` resolves paths relative to the crate's `Cargo.toml`, not the workspace root. For the api crate located at `crates/api/`, use `sqlx::migrate!("../../migrations")` to reference migrations at the project root. When building with Docker, ensure the `migrations` directory is copied into the build context.
+- **sqlx type features**: The workspace sqlx dependency must include the `uuid` and `chrono` features so that `Uuid` and `DateTime<Utc>` can be bound and decoded in repository queries.
+- **Repository row types**: Each repository defines an internal `*Row` struct (e.g. `UserRow`) deriving `sqlx::FromRow` that mirrors the DB columns exactly. A `From<*Row> for DomainType` impl converts to the domain model. This keeps sqlx out of the domain crate.
 - Use PostgreSQL `NUMERIC` type for financial amounts, mapped to `rust_decimal::Decimal`.
 - Column naming: `snake_case`. Table naming: plural `snake_case` (e.g. `transactions`, `price_history`).
-- Every table has `id UUID PRIMARY KEY`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`.
+- Every table has `id UUID PRIMARY KEY`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ` (exception: `refresh_tokens` has no `updated_at` since it is append-only).
 - Cascade delete: deleting a portfolio hard-deletes its transactions. Assets are shared and never cascade-deleted.
 - Use SQL transactions (`sqlx::Transaction`) for multi-row operations (e.g. broker import). Rollback on any failure.
 - Connection pool max size: 5 (configurable). Target is Raspberry Pi 3 with 1GB RAM.
@@ -83,6 +85,8 @@ crates/
 - All dates are `NaiveDate` (YYYY-MM-DD). All timestamps are `DateTime<Utc>`.
 - Use `garde` derive macros on all request DTOs.
 - Middleware stack order in `ServiceBuilder` is outermost-to-innermost (first added = outermost).
+- **AppState**: All handlers use `State<AppState>` — never `State<PgPool>` directly. `AppState` holds the pool and JWT secret. When constructing `AppState`, compute any values from `AppConfig` that would cause a partial-move error (e.g. `server_address()`) before consuming config fields into `AppState`.
+- **JWT extractor**: Protected handlers use the `AuthenticatedUser` extractor (implements `FromRequestParts`) which validates the Bearer token and exposes `user_id: Uuid`. No DB hit required for JWT verification.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -176,8 +180,8 @@ crates/
 - [x] BrokerImporter trait definition
 - [x] Unit tests for core domain logic
 
-### Phase 2: Features — NOT STARTED
-- [ ] 2a: Auth (users, register, login, JWT, middleware)
+### Phase 2: Features — IN PROGRESS
+- [x] 2a: Auth (users, register, login, JWT, middleware)
 - [ ] 2b: Portfolios (CRUD)
 - [ ] 2c: Assets (CRUD, OpenFIGI integration)
 - [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)

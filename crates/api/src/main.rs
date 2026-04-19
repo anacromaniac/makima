@@ -7,6 +7,9 @@
 //! - `domain`: Contains core domain models and business logic
 //! - `db`: Provides repository implementations for database access
 
+mod auth;
+mod state;
+
 use axum::{
     Router,
     extract::State,
@@ -17,6 +20,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
+use state::AppState;
 use std::env;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -28,7 +32,10 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use utoipa::OpenApi;
+use utoipa::{
+    OpenApi,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+};
 use utoipa_swagger_ui::SwaggerUi;
 
 /// Embedded migrations using `sqlx::migrate!()`.
@@ -39,8 +46,24 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 /// OpenAPI specification for the Makima API.
 #[derive(OpenApi)]
 #[openapi(
-    paths(health, ready),
-    components(schemas(HealthResponse, ReadyResponse)),
+    paths(
+        health,
+        ready,
+        auth::handlers::register,
+        auth::handlers::login,
+        auth::handlers::refresh,
+        auth::handlers::change_password,
+    ),
+    components(schemas(
+        HealthResponse,
+        ReadyResponse,
+        auth::dto::RegisterRequest,
+        auth::dto::LoginRequest,
+        auth::dto::RefreshRequest,
+        auth::dto::ChangePasswordRequest,
+        auth::dto::TokenResponse,
+    )),
+    modifiers(&SecurityAddon),
     info(
         title = "Makima API",
         version = "0.1.0",
@@ -48,6 +71,24 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
     )
 )]
 struct ApiDoc;
+
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "bearer_auth",
+                SecurityScheme::Http(
+                    HttpBuilder::new()
+                        .scheme(HttpAuthScheme::Bearer)
+                        .bearer_format("JWT")
+                        .build(),
+                ),
+            );
+        }
+    }
+}
 
 /// Application configuration loaded from environment variables.
 #[derive(Debug)]
@@ -62,6 +103,8 @@ struct AppConfig {
     server_port: u16,
     /// CORS allowed origins (comma-separated).
     cors_allowed_origins: Vec<String>,
+    /// HS256 signing secret for JWT access tokens.
+    jwt_secret: String,
 }
 
 impl AppConfig {
@@ -94,12 +137,16 @@ impl AppConfig {
             .map(|s| s.trim().to_string())
             .collect();
 
+        let jwt_secret =
+            env::var("JWT_SECRET").map_err(|_| "JWT_SECRET environment variable is required")?;
+
         Ok(Self {
             database_url,
             database_pool_max_size,
             server_host,
             server_port,
             cors_allowed_origins,
+            jwt_secret,
         })
     }
 
@@ -152,10 +199,10 @@ async fn health() -> impl IntoResponse {
         (status = 503, description = "Service is unavailable", body = ReadyResponse)
     )
 )]
-#[tracing::instrument(skip(pool))]
-async fn ready(State(pool): State<sqlx::PgPool>) -> impl IntoResponse {
+#[tracing::instrument(skip(state))]
+async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     match sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&pool)
+        .fetch_one(&state.pool)
         .await
     {
         Ok(_) => (
@@ -264,8 +311,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Migrations completed successfully");
 
-    // Build CORS layer
+    // Capture values that would be partially moved before constructing AppState
+    let server_addr = config.server_address();
     let cors_layer = build_cors_layer(&config.cors_allowed_origins);
+
+    let app_state = AppState {
+        pool,
+        jwt_secret: config.jwt_secret,
+    };
 
     // Build middleware stack (outermost first)
     let middleware = ServiceBuilder::new()
@@ -288,14 +341,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .merge(auth::handlers::auth_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
-        .with_state(pool)
+        .with_state(app_state)
         .layer(middleware)
         .layer(axum::middleware::from_fn(security_headers_middleware));
 
     // Bind to the configured address
-    let addr = config.server_address();
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&server_addr).await?;
     tracing::info!("Makima server listening on {}", listener.local_addr()?);
 
     // Start the server
