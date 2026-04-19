@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Migration failed: {e}"))?;
 
     let cron_expression =
-        std::env::var("PRICE_UPDATE_CRON").unwrap_or_else(|_| "0 0 22 * *".to_string());
+        std::env::var("PRICE_UPDATE_CRON").unwrap_or_else(|_| "0 0 22 * * *".to_string());
     let yahoo_client = YahooFinanceClient::from_env()
         .map_err(|e| format!("Failed to construct Yahoo Finance client: {e}"))?;
     let _price_scheduler = start_price_update_job(
