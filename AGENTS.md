@@ -111,6 +111,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - Every table has `id UUID PRIMARY KEY`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ` (exception: `refresh_tokens` has no `updated_at` since it is append-only).
 - Cascade delete: deleting a portfolio hard-deletes its transactions. Assets are shared and never cascade-deleted.
 - Use SQL transactions (`sqlx::Transaction`) for multi-row operations (e.g. broker import). Rollback on any failure.
+- **Derived numeric SQL output**: Queries that compute running costs, average prices, or similar derived `NUMERIC` values must round to a stable scale before decoding into `rust_decimal::Decimal` (for example `ROUND(..., 8)`). This avoids decode failures from repeating decimals produced by SQL division.
 - Connection pool max size: 5 (configurable). Target is Raspberry Pi 3 with 1GB RAM.
 
 ### API
@@ -129,6 +130,8 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - **Ownership isolation**: Handlers that operate on a resource owned by a user must return 404 (not 403) when the resource does not exist *or* belongs to a different user. This prevents leaking the existence of other users' data. Implement the check in the service layer by calling `find_by_id` and filtering on `user_id`.
 - **Transaction asset auto-creation**: For transaction create/update flows, handlers pass `asset_isin` to the application service. The service is responsible for resolving the shared asset by ISIN and auto-creating it through an injected reference-data adapter when it does not exist. Keep this logic out of handlers.
 - **Asset price backfill and scheduled refresh**: When an asset gains a Yahoo ticker for the first time (during create or update), the application service is responsible for triggering best-effort historical backfill through an injected price adapter. The daily scheduled refresh job is infrastructure wiring started from `crates/api/src/main.rs` with concrete repositories and Yahoo adapters; keep cron/job setup out of handlers.
+- **Broker import normalization**: Broker parsers return normalized parsed rows, not `NewTransaction` directly. The application import service is responsible for portfolio assignment, asset resolution/creation, FX lookup, duplicate detection, chronological ordering, and final `NewTransaction` construction.
+- **Broker import ordering**: Imported broker rows must be normalized to chronological order before no-short-sell validation and persistence. Real broker exports may be newest-first.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -177,7 +180,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 ### Unit tests
 - Live in the same file as the code they test, inside `#[cfg(test)]` modules.
 - `domain` crate: calculations (gain/loss, asset allocation), validations, currency conversions, transaction aggregation. No database, no network, no filesystem.
-- `importer` crate: parser correctness for Fineco and BG Saxo formats. Use fixture `.xlsx` files committed in the repo under `crates/importer/fixtures/`. Assert parsed output matches expected transactions.
+- `importer` crate: parser correctness for Fineco and BG Saxo formats. Use fixture broker exports committed in the repo under `crates/importer/fixtures/`. Real fixtures may be either `.xls` or `.xlsx`. Assert parsed output matches expected transactions.
 - `price-fetcher` crate: test JSON response parsing/mapping with fake responses only. No real network calls. Real API calls are `#[ignore]` tests for manual verification.
 
 ### Integration tests
@@ -241,7 +244,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2e: Positions (on-the-fly calculation, closed position flag)
 - [x] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
 - [x] 2g: Exchange rates (Yahoo Finance, daily job)
-- [ ] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)
+- [x] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)
 - [ ] 2i: Analytics (gain/loss, asset allocation)
 
 ### Phase 3: Polish — NOT STARTED

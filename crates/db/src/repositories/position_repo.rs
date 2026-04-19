@@ -118,9 +118,9 @@ impl PositionRepository for PgPositionRepository {
                         ELSE ps.quantity - ot.quantity
                     END AS quantity,
                     CASE
-                        WHEN ot.transaction_type = 'Buy' THEN ps.total_cost + (ot.quantity * ot.unit_price)
+                        WHEN ot.transaction_type = 'Buy' THEN ROUND(ps.total_cost + (ot.quantity * ot.unit_price), 8)
                         WHEN ps.quantity = 0 THEN 0::NUMERIC
-                        ELSE ps.total_cost - (ot.quantity * (ps.total_cost / ps.quantity))
+                        ELSE ROUND(ps.total_cost - (ot.quantity * (ps.total_cost / ps.quantity)), 8)
                     END AS total_cost
                 FROM ordered_transactions ot
                 INNER JOIN position_steps ps
@@ -132,7 +132,7 @@ impl PositionRepository for PgPositionRepository {
                     ps.asset_id,
                     ps.quantity,
                     CASE
-                        WHEN ps.quantity > 0 THEN ps.total_cost / ps.quantity
+                        WHEN ps.quantity > 0 THEN ROUND(ps.total_cost / ps.quantity, 8)
                         ELSE 0::NUMERIC
                     END AS average_cost
                 FROM position_steps ps

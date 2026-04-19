@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod auth;
+pub mod import;
 pub mod portfolios;
 pub mod positions;
 pub mod prices;

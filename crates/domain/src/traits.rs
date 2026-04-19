@@ -8,12 +8,13 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 use uuid::Uuid;
 
-use crate::error::{DomainError, RepositoryError};
+use crate::error::RepositoryError;
 use crate::models::{
-    Asset, AssetFilters, ExchangeRate, NewAsset, NewExchangeRate, NewPortfolio, NewPriceRecord,
-    NewRefreshToken, NewTransaction, PaginatedResult, PaginationParams, Portfolio, Position,
-    PriceRecord, RefreshToken, Transaction, TransactionFilters, UpdateAsset, UpdateTransaction,
-    User,
+    Asset, AssetFilters, BrokerImportParseError, ExchangeRate, NewAsset, NewExchangeRate,
+    NewPortfolio, NewPriceRecord, NewRefreshToken, NewTransaction, PaginatedResult,
+    PaginationParams, ParsedBrokerTransaction, Portfolio, Position, PreparedImportAsset,
+    PreparedImportTransaction, PriceRecord, RefreshToken, Transaction, TransactionFilters,
+    UpdateAsset, UpdateTransaction, User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -24,13 +25,33 @@ use crate::models::{
 /// bytes are provided directly so the implementation can choose the appropriate
 /// decoding strategy (e.g. Excel parsing via calamine).
 pub trait BrokerImporter {
-    /// Parse `file_bytes` and return a list of [`NewTransaction`] values.
+    /// Parse `file_bytes` and return normalized transactions plus row errors.
     ///
-    /// # Errors
-    ///
-    /// Returns [`DomainError::ValidationError`] if the file cannot be parsed or
-    /// contains invalid rows.
-    fn parse(&self, file_bytes: &[u8]) -> Result<Vec<NewTransaction>, DomainError>;
+    /// The returned rows still need application-layer enrichment such as
+    /// portfolio assignment, asset resolution, FX lookup, and duplicate
+    /// detection before persistence.
+    fn parse(
+        &self,
+        file_bytes: &[u8],
+    ) -> Result<Vec<ParsedBrokerTransaction>, BrokerImportParseError>;
+}
+
+/// Atomic persistence operations used by broker import workflows.
+#[async_trait]
+pub trait BrokerImportRepository: Send + Sync {
+    /// Return the subset of `import_hashes` already present in the portfolio.
+    async fn find_existing_import_hashes(
+        &self,
+        portfolio_id: Uuid,
+        import_hashes: &[String],
+    ) -> Result<Vec<String>, RepositoryError>;
+
+    /// Persist every prepared asset and transaction inside a single SQL transaction.
+    async fn import_batch(
+        &self,
+        assets: &[PreparedImportAsset],
+        transactions: &[PreparedImportTransaction],
+    ) -> Result<(), RepositoryError>;
 }
 
 // ── Repository ports ─────────────────────────────────────────────────────────

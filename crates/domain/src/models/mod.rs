@@ -5,6 +5,7 @@
 //! remain free of framework and database imports.
 
 pub mod asset;
+pub mod broker_import;
 pub mod exchange_rate;
 pub mod pagination;
 pub mod portfolio;
@@ -16,6 +17,10 @@ pub mod user;
 
 // Re-export enums and models for convenient access.
 pub use asset::{Asset, AssetClass, AssetFilters, NewAsset, UpdateAsset};
+pub use broker_import::{
+    BrokerImportParseError, BrokerImportRowError, ParsedBrokerTransaction, PreparedImportAsset,
+    PreparedImportTransaction,
+};
 pub use exchange_rate::{ExchangeRate, NewExchangeRate};
 pub use pagination::{PaginatedResult, PaginationMeta, PaginationParams};
 pub use portfolio::{NewPortfolio, Portfolio};

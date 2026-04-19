@@ -143,15 +143,17 @@ REST API backend written in Rust, deployed via Docker on Raspberry Pi, for track
 
 ### 4.8 Broker import
 
-- **Upload via API**: endpoint `POST /api/v1/import/{broker}` accepting an Excel (.xlsx) file as multipart upload.
-- **Pluggable parser system**: `BrokerImporter` trait in the `domain` crate with a method to parse a file and return a list of normalized transactions. Each broker implements the trait.
+- **Upload via API**: endpoint `POST /api/v1/import/{broker}` accepting a broker export file as multipart upload. The MVP supports Fineco `.xls` exports and BG Saxo `.xlsx` exports.
+- **Pluggable parser system**: `BrokerImporter` trait in the `domain` crate with a method to parse a file and return normalized parsed rows. Each broker implements the trait.
 - **MVP parsers**: Fineco, BG Saxo.
 - **Import behavior**:
   1. Parse the Excel file according to the broker's format.
   2. Validate all rows. If any row has invalid data (malformed ISIN, negative quantity, invalid date, etc.), reject the entire import with a detailed error listing all problematic rows. No partial inserts.
-  3. For each valid transaction: look up the asset by ISIN. If it doesn't exist, attempt to create it via OpenFIGI. If OpenFIGI fails, create the asset with `yahoo_ticker = NULL` and include a warning in the response. The user can map the ticker manually later.
-  4. Insert all transactions in a single SQL transaction. If any INSERT fails, rollback everything.
-  5. Return a summary response: imported transactions count, created assets, warnings (assets without ticker), errors if any.
+  3. Normalize valid parsed rows into chronological order before business-rule validation and persistence because broker exports may be newest-first.
+  4. For each valid parsed row: look up the asset by ISIN. If it doesn't exist, attempt to enrich it via OpenFIGI. If OpenFIGI fails, create the asset from broker-provided metadata with `yahoo_ticker = NULL` and include a warning in the response. The user can map the ticker manually later.
+  5. Resolve `exchange_rate_to_base` for non-EUR transactions using the latest available lookup. If lookup fails, keep the import successful, store a fallback value, and include a warning in the response.
+  6. Insert all assets and transactions in a single SQL transaction. If any INSERT fails, rollback everything.
+  7. Return a summary response: imported transactions count, created assets, warnings (assets without ticker, duplicate rows skipped, missing FX lookup, backfill failures), errors if any.
 - **Duplicate handling**: basic detection to avoid importing the same file twice (e.g. file hash or check on date+ISIN+quantity+price).
 
 ### 4.9 Analytics
@@ -304,7 +306,7 @@ All configuration is managed through environment variables only (12-factor). A `
 - `unit_price` NUMERIC(18,8) — NULL for Dividend/Coupon
 - `commission` NUMERIC(18,4) DEFAULT 0
 - `currency` VARCHAR NOT NULL
-- `exchange_rate_to_base` NUMERIC(18,8) — Rate to EUR at time of operation
+- `exchange_rate_to_base` NUMERIC(18,8) NOT NULL — Rate to EUR at time of operation; EUR uses `1`, broker import currently persists a fallback numeric value plus warning when lookup is unavailable
 - `gross_amount` NUMERIC(18,4) — For Dividend/Coupon
 - `tax_withheld` NUMERIC(18,4) — For Dividend/Coupon
 - `net_amount` NUMERIC(18,4) — For Dividend/Coupon

@@ -1,0 +1,27 @@
+@base_url = http://localhost:3000
+@access_token = replace-me
+@portfolio_id = replace-me
+
+### Import Fineco workbook
+POST {{base_url}}/api/v1/import/fineco?portfolio_id={{portfolio_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: multipart/form-data; boundary=MakimaBoundary
+
+--MakimaBoundary
+Content-Disposition: form-data; name="file"; filename="fineco.xls"
+Content-Type: application/vnd.ms-excel
+
+< ../test_files/fineco.xls
+--MakimaBoundary--
+
+### Import BG Saxo workbook
+POST {{base_url}}/api/v1/import/bgsaxo?portfolio_id={{portfolio_id}}
+Authorization: Bearer {{access_token}}
+Content-Type: multipart/form-data; boundary=MakimaBoundary
+
+--MakimaBoundary
+Content-Disposition: form-data; name="file"; filename="bgsaxo.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ../test_files/bgsaxo.xlsx
+--MakimaBoundary--

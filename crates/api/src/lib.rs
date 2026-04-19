@@ -6,6 +6,7 @@
 
 pub mod assets;
 pub mod auth;
+pub mod import;
 pub mod portfolios;
 pub mod positions;
 mod state;
@@ -18,6 +19,7 @@ use std::time::Duration;
 use application::{
     assets::{AssetPriceBackfill, AssetService, AssetTickerLookup},
     auth::AuthService,
+    import::ImportService,
     portfolios::PortfolioService,
     positions::PositionService,
     prices::{CurrentPriceLookup, PriceService},
@@ -36,6 +38,7 @@ use axum::{
 use chrono::Utc;
 use db::repositories::exchange_rate_repo::PgExchangeRateRepository;
 use domain::{ExchangeRateRepository, NewExchangeRate};
+use importer::{bgsaxo::BgSaxoImporter, fineco::FinecoImporter};
 use price_fetcher::openfigi::OpenFigiClient;
 use price_fetcher::{exchange::YahooExchangeRateFetcher, yahoo::YahooFinanceClient};
 use serde::{Deserialize, Serialize};
@@ -369,6 +372,8 @@ where
     });
     let transaction_repo =
         Arc::new(db::repositories::transaction_repo::PgTransactionRepository::new(pool.clone()));
+    let broker_import_repo =
+        Arc::new(db::repositories::broker_import_repo::PgBrokerImportRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(
         user_repo.clone(),
         refresh_token_repo.clone(),
@@ -384,14 +389,33 @@ where
     let price_service = Arc::new(PriceService::new(
         asset_repo.clone(),
         price_repo,
-        price_adapters,
+        price_adapters.clone(),
     ));
     let transaction_service = Arc::new(TransactionService::new(
+        portfolio_repo.clone(),
+        asset_repo.clone(),
+        transaction_repo.clone(),
+        asset_reference_lookup.clone(),
+        persisted_exchange_rate_lookup.clone(),
+    ));
+    let import_service = Arc::new(ImportService::new(
         portfolio_repo,
         asset_repo,
         transaction_repo,
-        asset_reference_lookup,
+        broker_import_repo,
+        asset_reference_lookup.clone(),
         persisted_exchange_rate_lookup,
+        price_adapters.clone(),
+        std::collections::HashMap::from([
+            (
+                "fineco".to_string(),
+                Arc::new(FinecoImporter) as Arc<dyn domain::BrokerImporter + Send + Sync>,
+            ),
+            (
+                "bgsaxo".to_string(),
+                Arc::new(BgSaxoImporter) as Arc<dyn domain::BrokerImporter + Send + Sync>,
+            ),
+        ]),
     ));
     let user_service = Arc::new(UserService::new(user_repo));
 
@@ -403,6 +427,7 @@ where
         position_service,
         price_service,
         transaction_service,
+        import_service,
         user_service,
         jwt_secret,
     }
@@ -429,6 +454,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         .merge(portfolios::handlers::portfolios_router())
         .merge(positions::handlers::positions_router())
         .merge(assets::handlers::assets_router())
+        .merge(import::handlers::import_router())
         .merge(transactions::handlers::transactions_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(app_state)
@@ -460,6 +486,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::handlers::update_portfolio,
         portfolios::handlers::delete_portfolio,
         positions::handlers::list_positions,
+        import::handlers::import_transactions,
         transactions::handlers::list_transactions,
         transactions::handlers::create_transaction,
         transactions::handlers::get_transaction,
@@ -489,6 +516,9 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::handlers::PaginatedPortfolioResponse,
         portfolios::handlers::PaginationMetaResponse,
         positions::dto::PositionResponse,
+        import::dto::ImportErrorResponse,
+        import::dto::ImportResponse,
+        import::dto::ImportRowErrorResponse,
         transactions::dto::CreateTransactionRequest,
         transactions::dto::UpdateTransactionRequest,
         transactions::dto::TransactionResponse,

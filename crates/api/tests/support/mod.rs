@@ -136,6 +136,28 @@ impl TestApp {
         self.send(method, uri, Some(access_token), None).await
     }
 
+    pub async fn request_bytes_with_token(
+        &self,
+        method: Method,
+        uri: &str,
+        access_token: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Response<Body> {
+        self.send_bytes(method, uri, Some(access_token), content_type, body)
+            .await
+    }
+
+    pub async fn request_bytes(
+        &self,
+        method: Method,
+        uri: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Response<Body> {
+        self.send_bytes(method, uri, None, content_type, body).await
+    }
+
     pub async fn register_user(&self, email: &str, password: &str) -> Response<Body> {
         self.request_json(
             Method::POST,
@@ -296,6 +318,34 @@ impl TestApp {
                 .body(Body::empty())
                 .expect("failed to build request")
         };
+
+        self.app
+            .as_ref()
+            .expect("test app already cleaned up")
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("request execution failed")
+    }
+
+    async fn send_bytes(
+        &self,
+        method: Method,
+        uri: &str,
+        access_token: Option<&str>,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Response<Body> {
+        let mut builder = Request::builder().method(method).uri(uri);
+
+        if let Some(token) = access_token {
+            builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+
+        let request = builder
+            .header(header::CONTENT_TYPE, content_type)
+            .body(Body::from(body))
+            .expect("failed to build request");
 
         self.app
             .as_ref()

@@ -8,6 +8,7 @@ edition.workspace = true
 domain.workspace = true
 
 # External dependencies
+calamine = "0.34"
 uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true

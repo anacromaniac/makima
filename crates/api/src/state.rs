@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use application::{
-    assets::AssetService, auth::AuthService, portfolios::PortfolioService,
+    assets::AssetService, auth::AuthService, import::ImportService, portfolios::PortfolioService,
     positions::PositionService, prices::PriceService, transactions::TransactionService,
     users::UserService,
 };
@@ -29,6 +29,8 @@ pub struct AppState {
     pub price_service: Arc<PriceService>,
     /// Transaction workflows.
     pub transaction_service: Arc<TransactionService>,
+    /// Broker import workflows.
+    pub import_service: Arc<ImportService>,
     /// User profile workflows.
     pub user_service: Arc<UserService>,
     /// HS256 signing secret for JWT access tokens.

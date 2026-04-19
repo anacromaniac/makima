@@ -24,7 +24,7 @@ pub use error::{DomainError, RepositoryError};
 pub use logic::{GainLoss, aggregate_position, calculate_allocation, calculate_gain_loss};
 pub use models::*;
 pub use traits::{
-    AssetRepository, BrokerImporter, ExchangeRateRepository, PortfolioRepository,
-    PositionRepository, PriceRepository, RefreshTokenRepository, TransactionRepository,
-    UserRepository,
+    AssetRepository, BrokerImportRepository, BrokerImporter, ExchangeRateRepository,
+    PortfolioRepository, PositionRepository, PriceRepository, RefreshTokenRepository,
+    TransactionRepository, UserRepository,
 };
