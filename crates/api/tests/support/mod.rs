@@ -2,10 +2,8 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use api::{
-    AppState, MIGRATOR, assets::service::AssetTickerLookup, auth::jwt::Claims, build_app,
-    build_app_state_with_lookup,
-};
+use api::{AppState, MIGRATOR, auth::jwt::Claims, build_app, build_app_state_with_lookup};
+use application::assets::AssetTickerLookup;
 use axum::{
     Router,
     body::{Body, to_bytes},

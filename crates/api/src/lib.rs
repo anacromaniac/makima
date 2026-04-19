@@ -13,6 +13,12 @@ pub mod users;
 use std::sync::Arc;
 use std::time::Duration;
 
+use application::{
+    assets::{AssetService, AssetTickerLookup},
+    auth::AuthService,
+    portfolios::PortfolioService,
+    users::UserService,
+};
 use axum::{
     Router,
     extract::State,
@@ -38,6 +44,17 @@ use utoipa::{
 use utoipa_swagger_ui::SwaggerUi;
 
 pub use state::AppState;
+
+struct OpenFigiTickerLookup {
+    client: OpenFigiClient,
+}
+
+#[async_trait::async_trait]
+impl AssetTickerLookup for OpenFigiTickerLookup {
+    async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
+        self.client.lookup_yahoo_ticker(isin).await
+    }
+}
 
 /// Embedded sqlx migrations for the workspace.
 ///
@@ -107,18 +124,24 @@ impl AppConfig {
     }
 }
 
-/// Build the shared application state with concrete PostgreSQL repository adapters.
+/// Build the shared application state with concrete adapters and application services.
 pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
     let openfigi_client =
         OpenFigiClient::from_env().expect("failed to construct OpenFIGI client from environment");
-    build_app_state_with_lookup(pool, jwt_secret, Arc::new(openfigi_client))
+    build_app_state_with_lookup(
+        pool,
+        jwt_secret,
+        Arc::new(OpenFigiTickerLookup {
+            client: openfigi_client,
+        }),
+    )
 }
 
 /// Build the shared application state with an injected ticker lookup adapter.
 pub fn build_app_state_with_lookup(
     pool: sqlx::PgPool,
     jwt_secret: String,
-    asset_ticker_lookup: Arc<dyn assets::service::AssetTickerLookup>,
+    asset_ticker_lookup: Arc<dyn AssetTickerLookup>,
 ) -> AppState {
     let user_repo = Arc::new(db::repositories::user_repo::PgUserRepository::new(
         pool.clone(),
@@ -130,14 +153,21 @@ pub fn build_app_state_with_lookup(
     let asset_repo = Arc::new(db::repositories::asset_repo::PgAssetRepository::new(
         pool.clone(),
     ));
+    let auth_service = Arc::new(AuthService::new(
+        user_repo.clone(),
+        refresh_token_repo.clone(),
+        jwt_secret.clone(),
+    ));
+    let asset_service = Arc::new(AssetService::new(asset_repo, asset_ticker_lookup));
+    let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo));
+    let user_service = Arc::new(UserService::new(user_repo));
 
     AppState {
         pool,
-        user_repo,
-        refresh_token_repo,
-        portfolio_repo,
-        asset_repo,
-        asset_ticker_lookup,
+        auth_service,
+        asset_service,
+        portfolio_service,
+        user_service,
         jwt_secret,
     }
 }

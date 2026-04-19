@@ -1,5 +1,6 @@
 //! HTTP handlers for portfolio CRUD endpoints.
 
+use application::portfolios::PortfolioError;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -14,38 +15,33 @@ use uuid::Uuid;
 
 use crate::{
     auth::AuthenticatedUser,
-    portfolios::{
-        dto::{CreatePortfolioRequest, PortfolioResponse, UpdatePortfolioRequest},
-        service::{self, PortfolioError},
-    },
+    portfolios::dto::{CreatePortfolioRequest, PortfolioResponse, UpdatePortfolioRequest},
     state::AppState,
 };
 
 // ── Error types ───────────────────────────────────────────────────────────────
 
-impl IntoResponse for PortfolioError {
-    fn into_response(self) -> Response {
-        let (status, code, message): (StatusCode, &'static str, String) = match self {
-            PortfolioError::NotFound => (
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                "Portfolio not found".to_string(),
-            ),
-            PortfolioError::Repository(e) => {
-                tracing::error!("Portfolio repository error: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Internal server error".to_string(),
-                )
-            }
-        };
-        (
-            status,
-            Json(serde_json::json!({ "code": code, "message": message })),
-        )
-            .into_response()
-    }
+fn portfolio_error_response(error: PortfolioError) -> Response {
+    let (status, code, message): (StatusCode, &'static str, String) = match error {
+        PortfolioError::NotFound => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "Portfolio not found".to_string(),
+        ),
+        PortfolioError::Repository(e) => {
+            tracing::error!("Portfolio repository error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Internal server error".to_string(),
+            )
+        }
+    };
+    (
+        status,
+        Json(serde_json::json!({ "code": code, "message": message })),
+    )
+        .into_response()
 }
 
 /// Unified error for handlers that perform validation before calling the service.
@@ -63,7 +59,7 @@ impl IntoResponse for PortfolioHandlerError {
                 Json(serde_json::json!({ "code": "VALIDATION_ERROR", "message": msg })),
             )
                 .into_response(),
-            Self::Service(e) => e.into_response(),
+            Self::Service(e) => portfolio_error_response(e),
         }
     }
 }
@@ -175,9 +171,12 @@ pub(crate) async fn list_portfolios(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Query(pagination): Query<PaginationQuery>,
-) -> Result<Json<PaginatedPortfolioResponse>, PortfolioError> {
+) -> Result<Json<PaginatedPortfolioResponse>, PortfolioHandlerError> {
     let params = PaginationParams::from(pagination);
-    let result = service::list(&*state.portfolio_repo, auth_user.user_id, &params).await?;
+    let result = state
+        .portfolio_service
+        .list(auth_user.user_id, &params)
+        .await?;
     Ok(Json(PaginatedPortfolioResponse::from(result)))
 }
 
@@ -203,13 +202,10 @@ pub(crate) async fn create_portfolio(
     body.validate()
         .map_err(|e| PortfolioHandlerError::Validation(e.to_string()))?;
 
-    let portfolio = service::create(
-        &*state.portfolio_repo,
-        auth_user.user_id,
-        body.name,
-        body.description,
-    )
-    .await?;
+    let portfolio = state
+        .portfolio_service
+        .create(auth_user.user_id, body.name, body.description)
+        .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -235,8 +231,8 @@ pub(crate) async fn get_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<PortfolioResponse>, PortfolioError> {
-    let portfolio = service::get(&*state.portfolio_repo, auth_user.user_id, id).await?;
+) -> Result<Json<PortfolioResponse>, PortfolioHandlerError> {
+    let portfolio = state.portfolio_service.get(auth_user.user_id, id).await?;
     Ok(Json(PortfolioResponse::from(portfolio)))
 }
 
@@ -265,14 +261,10 @@ pub(crate) async fn update_portfolio(
     body.validate()
         .map_err(|e| PortfolioHandlerError::Validation(e.to_string()))?;
 
-    let portfolio = service::update(
-        &*state.portfolio_repo,
-        auth_user.user_id,
-        id,
-        body.name,
-        body.description,
-    )
-    .await?;
+    let portfolio = state
+        .portfolio_service
+        .update(auth_user.user_id, id, body.name, body.description)
+        .await?;
 
     Ok(Json(PortfolioResponse::from(portfolio)))
 }
@@ -295,7 +287,10 @@ pub(crate) async fn delete_portfolio(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Path(id): Path<Uuid>,
-) -> Result<StatusCode, PortfolioError> {
-    service::delete(&*state.portfolio_repo, auth_user.user_id, id).await?;
+) -> Result<StatusCode, PortfolioHandlerError> {
+    state
+        .portfolio_service
+        .delete(auth_user.user_id, id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }

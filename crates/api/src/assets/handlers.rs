@@ -1,5 +1,6 @@
 //! HTTP handlers for shared asset CRUD endpoints.
 
+use application::assets::AssetError;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -12,43 +13,38 @@ use garde::Validate;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    assets::{
-        dto::{ApiAssetClass, AssetResponse, CreateAssetRequest, UpdateAssetRequest},
-        service::{self, AssetError},
-    },
+    assets::dto::{ApiAssetClass, AssetResponse, CreateAssetRequest, UpdateAssetRequest},
     auth::AuthenticatedUser,
     state::AppState,
 };
 
-impl IntoResponse for AssetError {
-    fn into_response(self) -> Response {
-        let (status, code, message): (StatusCode, &'static str, String) = match self {
-            AssetError::NotFound => (
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                "Asset not found".to_string(),
-            ),
-            AssetError::DuplicateIsin => (
-                StatusCode::CONFLICT,
-                "ASSET_ALREADY_EXISTS",
-                "Asset with this ISIN already exists".to_string(),
-            ),
-            AssetError::Repository(error) => {
-                tracing::error!("Asset repository error: {error}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Internal server error".to_string(),
-                )
-            }
-        };
+fn asset_error_response(error: AssetError) -> Response {
+    let (status, code, message): (StatusCode, &'static str, String) = match error {
+        AssetError::NotFound => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "Asset not found".to_string(),
+        ),
+        AssetError::DuplicateIsin => (
+            StatusCode::CONFLICT,
+            "ASSET_ALREADY_EXISTS",
+            "Asset with this ISIN already exists".to_string(),
+        ),
+        AssetError::Repository(error) => {
+            tracing::error!("Asset repository error: {error}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Internal server error".to_string(),
+            )
+        }
+    };
 
-        (
-            status,
-            Json(serde_json::json!({ "code": code, "message": message })),
-        )
-            .into_response()
-    }
+    (
+        status,
+        Json(serde_json::json!({ "code": code, "message": message })),
+    )
+        .into_response()
 }
 
 /// Unified error for handlers that validate input before calling the service.
@@ -66,7 +62,7 @@ impl IntoResponse for AssetHandlerError {
                 Json(serde_json::json!({ "code": "VALIDATION_ERROR", "message": message })),
             )
                 .into_response(),
-            Self::Service(error) => error.into_response(),
+            Self::Service(error) => asset_error_response(error),
         }
     }
 }
@@ -178,8 +174,11 @@ pub(crate) async fn list_assets(
     State(state): State<AppState>,
     _auth_user: AuthenticatedUser,
     Query(query): Query<AssetListQuery>,
-) -> Result<Json<PaginatedAssetResponse>, AssetError> {
-    let result = service::list(&*state.asset_repo, &query.pagination(), &query.filters()).await?;
+) -> Result<Json<PaginatedAssetResponse>, AssetHandlerError> {
+    let result = state
+        .asset_service
+        .list(&query.pagination(), &query.filters())
+        .await?;
     Ok(Json(PaginatedAssetResponse::from(result)))
 }
 
@@ -202,9 +201,9 @@ pub(crate) async fn get_asset(
     _auth_user: AuthenticatedUser,
     Path(isin): Path<String>,
 ) -> Result<Json<AssetResponse>, AssetHandlerError> {
-    service::is_valid_isin(&isin, &())
+    application::assets::is_valid_isin(&isin, &())
         .map_err(|error| AssetHandlerError::Validation(error.to_string()))?;
-    let asset = service::get(&*state.asset_repo, &isin).await?;
+    let asset = state.asset_service.get(&isin).await?;
     Ok(Json(AssetResponse::from(asset)))
 }
 
@@ -231,19 +230,17 @@ pub(crate) async fn create_asset(
     body.validate()
         .map_err(|error| AssetHandlerError::Validation(error.to_string()))?;
 
-    let asset = service::create(
-        &*state.asset_repo,
-        &*state.asset_ticker_lookup,
-        domain::NewAsset {
+    let asset = state
+        .asset_service
+        .create(domain::NewAsset {
             isin: body.isin,
             yahoo_ticker: body.yahoo_ticker,
             name: body.name,
             asset_class: body.asset_class.into(),
             currency: body.currency,
             exchange: body.exchange,
-        },
-    )
-    .await?;
+        })
+        .await?;
 
     Ok((StatusCode::CREATED, Json(AssetResponse::from(asset))))
 }
@@ -270,23 +267,24 @@ pub(crate) async fn update_asset(
     Path(isin): Path<String>,
     Json(body): Json<UpdateAssetRequest>,
 ) -> Result<Json<AssetResponse>, AssetHandlerError> {
-    service::is_valid_isin(&isin, &())
+    application::assets::is_valid_isin(&isin, &())
         .map_err(|error| AssetHandlerError::Validation(error.to_string()))?;
     body.validate()
         .map_err(|error| AssetHandlerError::Validation(error.to_string()))?;
 
-    let asset = service::update(
-        &*state.asset_repo,
-        &isin,
-        UpdateAsset {
-            yahoo_ticker: body.yahoo_ticker,
-            name: body.name,
-            asset_class: body.asset_class.into(),
-            currency: body.currency,
-            exchange: body.exchange,
-        },
-    )
-    .await?;
+    let asset = state
+        .asset_service
+        .update(
+            &isin,
+            UpdateAsset {
+                yahoo_ticker: body.yahoo_ticker,
+                name: body.name,
+                asset_class: body.asset_class.into(),
+                currency: body.currency,
+                exchange: body.exchange,
+            },
+        )
+        .await?;
 
     Ok(Json(AssetResponse::from(asset)))
 }

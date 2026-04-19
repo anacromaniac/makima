@@ -1,0 +1,22 @@
+[package]
+name = "application"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Workspace dependencies
+domain.workspace = true
+
+# External dependencies
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+garde.workspace = true
+async-trait.workspace = true
+
+# Auth and token helpers
+argon2.workspace = true
+jsonwebtoken.workspace = true
+sha2.workspace = true
+rand.workspace = true

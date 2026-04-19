@@ -1,11 +1,12 @@
-//! Asset service — business logic for shared asset CRUD and ticker lookup.
+//! Asset use cases and application-specific external ports.
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use domain::{
     Asset, AssetFilters, AssetRepository, NewAsset, PaginatedResult, PaginationParams,
     RepositoryError, UpdateAsset,
 };
-use price_fetcher::openfigi::OpenFigiClient;
 
 /// Lookup adapter used to map an ISIN to a Yahoo Finance ticker.
 #[async_trait]
@@ -13,13 +14,6 @@ pub trait AssetTickerLookup: Send + Sync {
     /// Return the mapped Yahoo Finance ticker, or `None` when no mapping is
     /// available or the upstream service fails.
     async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String>;
-}
-
-#[async_trait]
-impl AssetTickerLookup for OpenFigiClient {
-    async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
-        OpenFigiClient::lookup_yahoo_ticker(self, isin).await
-    }
 }
 
 /// Errors that can occur during asset operations.
@@ -34,6 +28,75 @@ pub enum AssetError {
     /// Underlying repository failure.
     #[error("repository error: {0}")]
     Repository(#[from] RepositoryError),
+}
+
+/// Application service for shared asset workflows.
+#[derive(Clone)]
+pub struct AssetService {
+    repo: Arc<dyn AssetRepository>,
+    ticker_lookup: Arc<dyn AssetTickerLookup>,
+}
+
+impl AssetService {
+    /// Create a new asset service.
+    pub fn new(repo: Arc<dyn AssetRepository>, ticker_lookup: Arc<dyn AssetTickerLookup>) -> Self {
+        Self {
+            repo,
+            ticker_lookup,
+        }
+    }
+
+    /// Create a shared asset and backfill its Yahoo ticker when missing.
+    pub async fn create(&self, mut new_asset: NewAsset) -> Result<Asset, AssetError> {
+        if new_asset.yahoo_ticker.is_none() {
+            new_asset.yahoo_ticker = self
+                .ticker_lookup
+                .lookup_yahoo_ticker(&new_asset.isin)
+                .await;
+        }
+
+        self.repo
+            .create(&new_asset)
+            .await
+            .map_err(|error| match error {
+                RepositoryError::Conflict(_) => AssetError::DuplicateIsin,
+                other => AssetError::Repository(other),
+            })
+    }
+
+    /// List shared assets with pagination and optional filters.
+    pub async fn list(
+        &self,
+        pagination: &PaginationParams,
+        filters: &AssetFilters,
+    ) -> Result<PaginatedResult<Asset>, AssetError> {
+        self.repo
+            .list(pagination, filters)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Return a single shared asset by ISIN.
+    pub async fn get(&self, isin: &str) -> Result<Asset, AssetError> {
+        self.repo
+            .find_by_isin(isin)
+            .await?
+            .ok_or(AssetError::NotFound)
+    }
+
+    /// Update an existing asset by ISIN.
+    pub async fn update(&self, isin: &str, update: UpdateAsset) -> Result<Asset, AssetError> {
+        let asset = self
+            .repo
+            .find_by_isin(isin)
+            .await?
+            .ok_or(AssetError::NotFound)?;
+
+        self.repo
+            .update(asset.id, &update)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 /// Return `true` when the string looks like a valid ISIN.
@@ -65,48 +128,6 @@ pub fn is_valid_isin(value: &str, _: &()) -> garde::Result {
     }
 
     Ok(())
-}
-
-/// Create a shared asset and backfill its Yahoo ticker via OpenFIGI when
-/// `yahoo_ticker` is not provided.
-pub async fn create(
-    repo: &dyn AssetRepository,
-    ticker_lookup: &dyn AssetTickerLookup,
-    mut new_asset: NewAsset,
-) -> Result<Asset, AssetError> {
-    if new_asset.yahoo_ticker.is_none() {
-        new_asset.yahoo_ticker = ticker_lookup.lookup_yahoo_ticker(&new_asset.isin).await;
-    }
-
-    repo.create(&new_asset).await.map_err(|error| match error {
-        RepositoryError::Conflict(_) => AssetError::DuplicateIsin,
-        other => AssetError::Repository(other),
-    })
-}
-
-/// List shared assets with pagination and optional filters.
-pub async fn list(
-    repo: &dyn AssetRepository,
-    pagination: &PaginationParams,
-    filters: &AssetFilters,
-) -> Result<PaginatedResult<Asset>, AssetError> {
-    repo.list(pagination, filters).await.map_err(Into::into)
-}
-
-/// Return a single asset by ISIN.
-pub async fn get(repo: &dyn AssetRepository, isin: &str) -> Result<Asset, AssetError> {
-    repo.find_by_isin(isin).await?.ok_or(AssetError::NotFound)
-}
-
-/// Update an existing asset by ISIN.
-pub async fn update(
-    repo: &dyn AssetRepository,
-    isin: &str,
-    update: UpdateAsset,
-) -> Result<Asset, AssetError> {
-    let asset = repo.find_by_isin(isin).await?.ok_or(AssetError::NotFound)?;
-
-    repo.update(asset.id, &update).await.map_err(Into::into)
 }
 
 #[cfg(test)]

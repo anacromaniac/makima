@@ -1,25 +1,16 @@
 //! HTTP handlers for user profile endpoints.
 
+use application::users::UserError;
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
-use domain::error::RepositoryError;
-use thiserror::Error;
 
 use crate::{auth::AuthenticatedUser, state::AppState, users::dto::UserResponse};
 
-/// Errors that can occur in user profile operations.
-#[derive(Debug, Error)]
-pub enum UserError {
-    /// The authenticated user's record was not found (should not happen with a valid JWT).
-    #[error("User not found")]
-    NotFound,
-    /// A storage-layer error occurred.
-    #[error("Repository error: {0}")]
-    Repository(#[from] RepositoryError),
-}
+#[derive(Debug)]
+pub(crate) struct UserHandlerError(UserError);
 
-impl IntoResponse for UserError {
+impl IntoResponse for UserHandlerError {
     fn into_response(self) -> axum::response::Response {
-        let (status, code, message): (StatusCode, &'static str, String) = match self {
+        let (status, code, message): (StatusCode, &'static str, String) = match self.0 {
             UserError::NotFound => (
                 StatusCode::NOT_FOUND,
                 "NOT_FOUND",
@@ -40,6 +31,12 @@ impl IntoResponse for UserError {
             Json(serde_json::json!({ "code": code, "message": message })),
         )
             .into_response()
+    }
+}
+
+impl From<UserError> for UserHandlerError {
+    fn from(value: UserError) -> Self {
+        Self(value)
     }
 }
 
@@ -65,12 +62,8 @@ pub fn users_router() -> Router<AppState> {
 pub(crate) async fn get_me(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
-) -> Result<Json<UserResponse>, UserError> {
-    let user = state
-        .user_repo
-        .find_by_id(auth_user.user_id)
-        .await?
-        .ok_or(UserError::NotFound)?;
+) -> Result<Json<UserResponse>, UserHandlerError> {
+    let user = state.user_service.get_me(auth_user.user_id).await?;
 
     Ok(Json(UserResponse::from(user)))
 }

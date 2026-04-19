@@ -1,5 +1,6 @@
 //! HTTP handlers for auth endpoints.
 
+use application::auth::AuthError;
 use axum::{
     Json, Router,
     extract::State,
@@ -10,11 +11,8 @@ use axum::{
 use garde::Validate;
 
 use crate::{
-    auth::{
-        dto::{
-            ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, TokenResponse,
-        },
-        service::{self, AuthError},
+    auth::dto::{
+        ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, TokenResponse,
     },
     state::AppState,
 };
@@ -23,9 +21,12 @@ use super::AuthenticatedUser;
 
 // ── IntoResponse impl lives here so the service layer stays axum-free ────────
 
-impl IntoResponse for AuthError {
+#[derive(Debug)]
+pub(crate) struct AuthHandlerError(AuthError);
+
+impl IntoResponse for AuthHandlerError {
     fn into_response(self) -> axum::response::Response {
-        let (status, code, message): (StatusCode, &'static str, String) = match self {
+        let (status, code, message): (StatusCode, &'static str, String) = match self.0 {
             AuthError::EmailAlreadyExists => (
                 StatusCode::CONFLICT,
                 "EMAIL_ALREADY_EXISTS",
@@ -80,6 +81,12 @@ impl IntoResponse for AuthError {
     }
 }
 
+impl From<AuthError> for AuthHandlerError {
+    fn from(value: AuthError) -> Self {
+        Self(value)
+    }
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 /// Build the auth sub-router mounted under `/api/v1/auth`.
@@ -108,7 +115,7 @@ pub fn auth_router() -> Router<AppState> {
 pub(crate) async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<impl IntoResponse, AuthHandlerError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -117,14 +124,10 @@ pub(crate) async fn register(
             .into_response());
     }
 
-    let pair = service::register(
-        state.user_repo.as_ref(),
-        state.refresh_token_repo.as_ref(),
-        &state.jwt_secret,
-        &payload.email,
-        &payload.password,
-    )
-    .await?;
+    let pair = state
+        .auth_service
+        .register(&payload.email, &payload.password)
+        .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -151,7 +154,7 @@ pub(crate) async fn register(
 pub(crate) async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<impl IntoResponse, AuthHandlerError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -160,14 +163,10 @@ pub(crate) async fn login(
             .into_response());
     }
 
-    let pair = service::login(
-        state.user_repo.as_ref(),
-        state.refresh_token_repo.as_ref(),
-        &state.jwt_secret,
-        &payload.email,
-        &payload.password,
-    )
-    .await?;
+    let pair = state
+        .auth_service
+        .login(&payload.email, &payload.password)
+        .await?;
 
     Ok(Json(TokenResponse {
         access_token: pair.access_token,
@@ -191,7 +190,7 @@ pub(crate) async fn login(
 pub(crate) async fn refresh(
     State(state): State<AppState>,
     Json(payload): Json<RefreshRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<impl IntoResponse, AuthHandlerError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -200,12 +199,7 @@ pub(crate) async fn refresh(
             .into_response());
     }
 
-    let pair = service::refresh(
-        state.refresh_token_repo.as_ref(),
-        &state.jwt_secret,
-        &payload.refresh_token,
-    )
-    .await?;
+    let pair = state.auth_service.refresh(&payload.refresh_token).await?;
 
     Ok(Json(TokenResponse {
         access_token: pair.access_token,
@@ -231,7 +225,7 @@ pub(crate) async fn change_password(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Json(payload): Json<ChangePasswordRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<impl IntoResponse, AuthHandlerError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -240,14 +234,14 @@ pub(crate) async fn change_password(
             .into_response());
     }
 
-    service::change_password(
-        state.user_repo.as_ref(),
-        state.refresh_token_repo.as_ref(),
-        auth_user.user_id,
-        &payload.old_password,
-        &payload.new_password,
-    )
-    .await?;
+    state
+        .auth_service
+        .change_password(
+            auth_user.user_id,
+            &payload.old_password,
+            &payload.new_password,
+        )
+        .await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }

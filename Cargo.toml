@@ -18,6 +18,9 @@ db = { path = "crates/db" }
 # API layer
 api = { path = "crates/api" }
 
+# Application layer
+application = { path = "crates/application" }
+
 # Feature crates
 importer = { path = "crates/importer" }
 price-fetcher = { path = "crates/price-fetcher" }

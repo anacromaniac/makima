@@ -54,7 +54,7 @@ impl From<domain::AssetClass> for ApiAssetClass {
 #[derive(Debug, Deserialize, Validate, utoipa::ToSchema)]
 pub struct CreateAssetRequest {
     /// International Securities Identification Number.
-    #[garde(custom(crate::assets::service::is_valid_isin))]
+    #[garde(custom(application::assets::is_valid_isin))]
     pub isin: String,
     /// Yahoo Finance ticker symbol, if already known.
     #[garde(skip)]
