@@ -26,11 +26,12 @@ Deploy target: Docker on Raspberry Pi. Network access via Tailscale.
 ## Workspace structure
 ```
 crates/
-├── api/            # Axum handlers, router, middleware, DTOs. Depends on: domain, db
+├── api/            # Axum handlers, router, middleware, DTOs, composition helpers. Depends on: application, db
+├── application/    # Use-case orchestration and application services/ports. Depends on: domain
 ├── domain/         # Models, business logic, traits. Zero framework/db dependencies
-├── db/             # Repositories, sqlx migrations. Depends on: domain
+├── db/             # Repository adapters using sqlx/PostgreSQL. Depends on: domain
 ├── importer/       # Broker parsers (Fineco, BG Saxo). Depends on: domain
-└── price-fetcher/  # Yahoo Finance, OpenFIGI clients. Depends on: domain
+└── price-fetcher/  # External market-data adapters (Yahoo Finance, OpenFIGI). Depends on: domain
 ```
 
 ---
@@ -38,33 +39,35 @@ crates/
 ## Coding conventions
 
 ### Architecture — Ports and Adapters
-The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is the core; everything else is a plug-in.**
+The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is the core, `application` is the use-case layer, and the other crates are adapters.**
 
 **Layer rules (hard constraints):**
 - `domain` crate: zero dependencies on sqlx, axum, or any infrastructure crate. Defines domain models, business logic, and **repository traits** (the "ports").
+- `application` crate: owns use-case orchestration, application services, and any application-level adapter traits. Depends on `domain`, never on axum or sqlx.
 - `db` crate: implements domain repository traits using sqlx/PostgreSQL (the "adapters"). Converts `sqlx::Error` → `domain::RepositoryError` — sqlx never leaks out.
-- `api` crate: Axum handlers, DTOs, middleware. Depends on `domain` traits, not on concrete `db` types (except in `main.rs` for wiring). Service functions in `api` take `&dyn UserRepository` etc., never `&PgPool`.
+- `api` crate: Axum handlers, DTOs, middleware, router composition, and shared app-state/build helpers. Depends on `application` services, not on concrete `db` types in handlers.
 - DTOs (request/response types) live in `api`. Domain models live in `domain`. Never expose domain models directly in API responses.
 
 **Repository trait pattern:**
 - Traits with async methods are defined in `domain::traits` using `#[async_trait]`. Supertraits `Send + Sync` make them usable as `Arc<dyn Trait>`.
 - `db` crate provides `Pg*Repository` structs (e.g. `PgUserRepository { pool: PgPool }`) that implement these traits. Each maps storage errors to `RepositoryError`.
-- `AppState` holds `Arc<dyn UserRepository>`, `Arc<dyn RefreshTokenRepository>`, etc. — never raw `PgPool` for business logic. (`pool` is kept only for `/ready` health checks and migrations.)
-- `main.rs` is the **composition root**: the only place that names concrete `Pg*Repository` types and wires them into `AppState`.
+- `application` services own `Arc<dyn ...Repository>` dependencies and expose use-case methods (`AuthService`, `PortfolioService`, etc.).
+- `AppState` holds `Arc<ApplicationService>` instances, not repositories. `pool` is kept only for `/ready` health checks and migrations.
+- The concrete adapter wiring lives in the API composition layer (`build_app_state`, `build_app_state_with_lookup`) and is invoked by `crates/api/src/main.rs`.
 
 **Service / handler separation:**
-- Service functions (`api/auth/service.rs`, future feature services) must not import axum or sqlx. They take trait objects, return domain error enums.
-- `impl IntoResponse for FooError` lives in `handlers.rs` (same crate, separate from service logic) — HTTP concerns stay in the handler layer.
-- `RepositoryError` variants (`Conflict`, `Internal`) are matched in service functions and mapped to feature-specific errors (e.g. `AuthError::EmailAlreadyExists`).
-- External HTTP integrations (for example OpenFIGI or Yahoo Finance) should be represented as small trait-backed adapters injected into `AppState`. Service functions depend on the trait, not on `reqwest` clients directly.
+- Application services live in `crates/application/src/<feature>.rs`. They must not import axum or sqlx. They take trait objects, return feature-specific application errors, and enforce ownership/business rules.
+- `impl IntoResponse for FooHandlerError` lives in `api/*/handlers.rs` so HTTP concerns stay in the transport layer.
+- `RepositoryError` variants (`Conflict`, `Internal`) are matched in application services and mapped to feature-specific errors (e.g. `AuthError::EmailAlreadyExists`).
+- External HTTP integrations (for example OpenFIGI or Yahoo Finance) should be represented as small trait-backed adapters owned by the `application` layer and injected during app-state construction. Application services depend on the trait, not on `reqwest` clients directly.
 
 **Adding a new feature (e.g. Portfolios):**
 1. Add `PortfolioRepository` trait to `domain::traits`.
 2. Add `PgPortfolioRepository` in `db` implementing it.
-3. Add `portfolio_repo: Arc<dyn PortfolioRepository>` to `AppState`.
-4. Wire `PgPortfolioRepository::new(pool.clone())` in `main.rs`.
-5. Write service functions taking `&dyn PortfolioRepository`.
-6. Write handlers calling the service; add `impl IntoResponse for PortfolioError` in `handlers.rs`.
+3. Add `PortfolioService` (or equivalent use-case type) to `crates/application/src/portfolios.rs`.
+4. Add `portfolio_service: Arc<PortfolioService>` to `AppState`.
+5. Wire `PgPortfolioRepository::new(pool.clone())` into the service in `build_app_state`.
+6. Write handlers calling the application service; add `impl IntoResponse for PortfolioHandlerError` in `handlers.rs`.
 
 ### Rust style
 - Use `thiserror` for domain error types, map to HTTP errors in `api` with `IntoResponse`.
@@ -92,13 +95,13 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - tower-http features: use specific compression features (`compression-gzip`, `compression-deflate`) instead of generic `compression`.
 - tower-http `util` feature is required for `ServiceBuilderExt` extension methods.
 - TimeoutLayer::new() is deprecated; use `TimeoutLayer::with_status_code()` instead.
-- utoipa requires `features = ["uuid", "chrono"]` in the api crate to support `Uuid` and `DateTime<Utc>` fields in `#[derive(ToSchema)]`.
+- utoipa requires `features = ["uuid", "chrono"]` in the `api` crate to support `Uuid` and `DateTime<Utc>` fields in `#[derive(ToSchema)]`.
 - `AuthenticatedUser` derives `Debug` (it only contains a `Uuid`) so handlers accepting it can be annotated with `#[tracing::instrument]`.
 
 ### Database
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).
 - Migrations are embedded in the binary via `sqlx::migrate!()` and run automatically on startup.
-- **Migration path resolution**: In a Cargo workspace, `sqlx::migrate!()` resolves paths relative to the crate's `Cargo.toml`, not the workspace root. For the api crate located at `crates/api/`, use `sqlx::migrate!("../../migrations")` to reference migrations at the project root. When building with Docker, ensure the `migrations` directory is copied into the build context.
+- **Migration path resolution**: In a Cargo workspace, `sqlx::migrate!()` resolves paths relative to the crate's `Cargo.toml`, not the workspace root. The `api` crate embeds migrations, so use `sqlx::migrate!("../../migrations")` from `crates/api/` to reference migrations at the project root. When building with Docker, ensure the `migrations` directory is copied into the build context.
 - **sqlx type features**: The workspace sqlx dependency must include the `uuid` and `chrono` features so that `Uuid` and `DateTime<Utc>` can be bound and decoded in repository queries.
 - **Repository row types**: Each repository defines an internal `*Row` struct (e.g. `UserRow`) deriving `sqlx::FromRow` that mirrors the DB columns exactly. A `From<*Row> for DomainType` impl converts to the domain model. This keeps sqlx out of the domain crate.
 - Use PostgreSQL `NUMERIC` type for financial amounts, mapped to `rust_decimal::Decimal`.
@@ -116,7 +119,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - All dates are `NaiveDate` (YYYY-MM-DD). All timestamps are `DateTime<Utc>`.
 - Use `garde` derive macros on all request DTOs.
 - Middleware stack order in `ServiceBuilder` is outermost-to-innermost (first added = outermost).
-- **AppState**: All handlers use `State<AppState>` — never `State<PgPool>` directly. `AppState` holds the pool and JWT secret. When constructing `AppState`, compute any values from `AppConfig` that would cause a partial-move error (e.g. `server_address()`) before consuming config fields into `AppState`.
+- **AppState**: All handlers use `State<AppState>` — never `State<PgPool>` directly. `AppState` holds the pool, JWT secret, and application services. When constructing `AppState`, compute any values from `AppConfig` that would cause a partial-move error (e.g. `server_address()`) before consuming config fields into `AppState`.
 - **JWT extractor**: Protected handlers use the `AuthenticatedUser` extractor (implements `FromRequestParts`) which validates the Bearer token and exposes `user_id: Uuid`. No DB hit required for JWT verification.
 - **Shared reference data**: Endpoints for shared resources such as `assets` still require JWT authentication by default, but they do not perform ownership filtering because the records are global.
 - **Paginated list endpoints — local schema type required**: `domain::PaginationMeta` cannot derive `ToSchema` (the domain crate has no utoipa dependency). Each feature that exposes a paginated list endpoint must define a local `PaginationMetaResponse` struct in its `handlers.rs` that mirrors `PaginationMeta` and derives `ToSchema`. The `From<PaginatedResult<T>>` impl on the paginated response type converts the domain type to the local schema type.
@@ -206,7 +209,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 ## Current status
 
 ### Phase 0: Scaffolding — IN PROGRESS
-- [x] Cargo workspace with all crates (api, domain, db, importer, price-fetcher)
+- [x] Cargo workspace with all crates (api, application, domain, db, importer, price-fetcher)
 - [x] `.gitattributes` (LF line endings, xlsx binary)
 - [x] `.env.example` with all config parameters
 - [x] docker-compose (backend + PostgreSQL)
