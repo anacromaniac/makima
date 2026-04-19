@@ -8,7 +8,10 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::error::{DomainError, RepositoryError};
-use crate::models::{NewRefreshToken, NewTransaction, RefreshToken, User};
+use crate::models::{
+    NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult, PaginationParams, Portfolio,
+    RefreshToken, User,
+};
 
 // ── Broker import ────────────────────────────────────────────────────────────
 
@@ -28,6 +31,36 @@ pub trait BrokerImporter {
 }
 
 // ── Repository ports ─────────────────────────────────────────────────────────
+
+/// Persistent storage operations for portfolios.
+///
+/// Implementations live in the `db` crate. Tests may provide in-memory mocks.
+#[async_trait]
+pub trait PortfolioRepository: Send + Sync {
+    /// Persist a new portfolio record.
+    async fn create(&self, new_portfolio: &NewPortfolio) -> Result<Portfolio, RepositoryError>;
+
+    /// Find a portfolio by primary key. Returns `None` if not found.
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Portfolio>, RepositoryError>;
+
+    /// List all portfolios belonging to a user, with pagination.
+    async fn find_by_user_id(
+        &self,
+        user_id: Uuid,
+        pagination: &PaginationParams,
+    ) -> Result<PaginatedResult<Portfolio>, RepositoryError>;
+
+    /// Update the name and description of an existing portfolio.
+    async fn update(
+        &self,
+        id: Uuid,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<Portfolio, RepositoryError>;
+
+    /// Hard-delete a portfolio by ID. Cascade deletes its transactions via FK.
+    async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
+}
 
 /// Persistent storage operations for user accounts.
 ///

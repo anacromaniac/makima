@@ -8,6 +8,7 @@
 //! - `db`: Provides repository implementations for database access
 
 mod auth;
+mod portfolios;
 mod state;
 mod users;
 
@@ -57,6 +58,11 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
         auth::handlers::refresh,
         auth::handlers::change_password,
         users::handlers::get_me,
+        portfolios::handlers::list_portfolios,
+        portfolios::handlers::create_portfolio,
+        portfolios::handlers::get_portfolio,
+        portfolios::handlers::update_portfolio,
+        portfolios::handlers::delete_portfolio,
     ),
     components(schemas(
         HealthResponse,
@@ -67,6 +73,11 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
         auth::dto::ChangePasswordRequest,
         auth::dto::TokenResponse,
         users::dto::UserResponse,
+        portfolios::dto::CreatePortfolioRequest,
+        portfolios::dto::UpdatePortfolioRequest,
+        portfolios::dto::PortfolioResponse,
+        portfolios::handlers::PaginatedPortfolioResponse,
+        portfolios::handlers::PaginationMetaResponse,
     )),
     modifiers(&SecurityAddon),
     info(
@@ -327,11 +338,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let refresh_token_repo =
         Arc::new(db::repositories::refresh_token_repo::PgRefreshTokenRepository::new(pool.clone()));
+    let portfolio_repo =
+        Arc::new(db::repositories::portfolio_repo::PgPortfolioRepository::new(pool.clone()));
 
     let app_state = AppState {
         pool,
         user_repo,
         refresh_token_repo,
+        portfolio_repo,
         jwt_secret: config.jwt_secret,
     };
 
@@ -358,6 +372,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/ready", get(ready))
         .merge(auth::handlers::auth_router())
         .merge(users::handlers::users_router())
+        .merge(portfolios::handlers::portfolios_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(app_state)
         .layer(middleware)

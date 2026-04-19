@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use domain::{RefreshTokenRepository, UserRepository};
+use domain::{PortfolioRepository, RefreshTokenRepository, UserRepository};
 
 /// Application state available to all request handlers via [`axum::extract::State`].
 ///
@@ -17,6 +17,8 @@ pub struct AppState {
     pub user_repo: Arc<dyn UserRepository>,
     /// Refresh token storage (port).
     pub refresh_token_repo: Arc<dyn RefreshTokenRepository>,
+    /// Portfolio storage (port).
+    pub portfolio_repo: Arc<dyn PortfolioRepository>,
     /// HS256 signing secret for JWT access tokens.
     pub jwt_secret: String,
 }

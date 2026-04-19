@@ -1,0 +1,82 @@
+### Portfolio endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base = http://localhost:3000
+# Replace <access_token> with the JWT returned from register or login.
+@token = <access_token>
+# Replace <portfolio_id> with a real portfolio UUID.
+@portfolio_id = <portfolio_id>
+
+### List portfolios (paginated)
+GET {{base}}/api/v1/portfolios?page=1&limit=25
+Authorization: Bearer {{token}}
+
+###
+
+### Create portfolio
+POST {{base}}/api/v1/portfolios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Fineco Account",
+  "description": "My main brokerage account"
+}
+
+###
+
+### Create portfolio without description
+POST {{base}}/api/v1/portfolios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Long-term Bonds"
+}
+
+###
+
+### Get portfolio by ID
+GET {{base}}/api/v1/portfolios/{{portfolio_id}}
+Authorization: Bearer {{token}}
+
+###
+
+### Update portfolio
+PUT {{base}}/api/v1/portfolios/{{portfolio_id}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Fineco — Equities",
+  "description": "Updated description"
+}
+
+###
+
+### Update portfolio — clear description
+PUT {{base}}/api/v1/portfolios/{{portfolio_id}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Fineco Account",
+  "description": null
+}
+
+###
+
+### Delete portfolio
+DELETE {{base}}/api/v1/portfolios/{{portfolio_id}}
+Authorization: Bearer {{token}}
+
+###
+
+### Create portfolio with empty name — expect 400
+POST {{base}}/api/v1/portfolios
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": ""
+}

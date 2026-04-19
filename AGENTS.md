@@ -117,6 +117,9 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - Middleware stack order in `ServiceBuilder` is outermost-to-innermost (first added = outermost).
 - **AppState**: All handlers use `State<AppState>` — never `State<PgPool>` directly. `AppState` holds the pool and JWT secret. When constructing `AppState`, compute any values from `AppConfig` that would cause a partial-move error (e.g. `server_address()`) before consuming config fields into `AppState`.
 - **JWT extractor**: Protected handlers use the `AuthenticatedUser` extractor (implements `FromRequestParts`) which validates the Bearer token and exposes `user_id: Uuid`. No DB hit required for JWT verification.
+- **Paginated list endpoints — local schema type required**: `domain::PaginationMeta` cannot derive `ToSchema` (the domain crate has no utoipa dependency). Each feature that exposes a paginated list endpoint must define a local `PaginationMetaResponse` struct in its `handlers.rs` that mirrors `PaginationMeta` and derives `ToSchema`. The `From<PaginatedResult<T>>` impl on the paginated response type converts the domain type to the local schema type.
+- **Handler validation error pattern**: When a handler can fail with both a garde validation error and a service error, define a `pub(crate) <Feature>HandlerError` enum in `handlers.rs` that has `Validation(String)` and `Service(<Feature>Error)` variants, both implementing `IntoResponse`. Use this as the `Err` type so the handler returns a single named error type. See `portfolios/handlers.rs` → `PortfolioHandlerError` as the template.
+- **Ownership isolation**: Handlers that operate on a resource owned by a user must return 404 (not 403) when the resource does not exist *or* belongs to a different user. This prevents leaking the existence of other users' data. Implement the check in the service layer by calling `find_by_id` and filtering on `user_id`.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -212,7 +215,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 
 ### Phase 2: Features — IN PROGRESS
 - [x] 2a: Auth (users, register, login, JWT, middleware)
-- [ ] 2b: Portfolios (CRUD)
+- [x] 2b: Portfolios (CRUD)
 - [ ] 2c: Assets (CRUD, OpenFIGI integration)
 - [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [ ] 2e: Positions (on-the-fly calculation, closed position flag)
