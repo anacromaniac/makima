@@ -1,18 +1,26 @@
+### Asset endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base_url = http://localhost:3000
+# Replace with the JWT returned from register or login.
+@access_token = <access_token>
+@asset_isin = IE00BK5BQT80
+
 ### List assets
-GET http://localhost:3000/api/v1/assets?page=1&limit=25&asset_class=Stock&search=world
+GET {{base_url}}/api/v1/assets?page=1&limit=25&asset_class=Stock&search=world
 Authorization: Bearer {{access_token}}
 
 ### Get asset by ISIN
-GET http://localhost:3000/api/v1/assets/IE00BK5BQT80
+GET {{base_url}}/api/v1/assets/{{asset_isin}}
 Authorization: Bearer {{access_token}}
 
 ### Create asset
-POST http://localhost:3000/api/v1/assets
+POST {{base_url}}/api/v1/assets
 Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
 {
-  "isin": "IE00BK5BQT80",
+  "isin": "{{asset_isin}}",
   "name": "Vanguard FTSE All-World UCITS ETF",
   "asset_class": "Stock",
   "currency": "EUR",
@@ -20,7 +28,7 @@ Content-Type: application/json
 }
 
 ### Update asset
-PUT http://localhost:3000/api/v1/assets/IE00BK5BQT80
+PUT {{base_url}}/api/v1/assets/{{asset_isin}}
 Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
@@ -33,11 +41,11 @@ Content-Type: application/json
 }
 
 ### Refresh asset price from Yahoo Finance
-POST http://localhost:3000/api/v1/assets/IE00BK5BQT80/refresh-price
+POST {{base_url}}/api/v1/assets/{{asset_isin}}/refresh-price
 Authorization: Bearer {{access_token}}
 
 ### Store manual asset price
-PUT http://localhost:3000/api/v1/assets/IE00BK5BQT80/price
+PUT {{base_url}}/api/v1/assets/{{asset_isin}}/price
 Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
@@ -48,5 +56,5 @@ Content-Type: application/json
 }
 
 ### List asset price history
-GET http://localhost:3000/api/v1/assets/IE00BK5BQT80/price-history?page=1&limit=25&from_date=2026-01-01&to_date=2026-12-31
+GET {{base_url}}/api/v1/assets/{{asset_isin}}/price-history?page=1&limit=25&from_date=2026-01-01&to_date=2026-12-31
 Authorization: Bearer {{access_token}}

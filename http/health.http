@@ -1,19 +1,24 @@
+### Health endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base_url = http://localhost:3000
+
 ### Health check
 # Returns 200 if the service is running
-GET http://localhost:3000/health
+GET {{base_url}}/health
 
 ### Readiness check
 # Returns 200 if database is reachable, 503 otherwise
-GET http://localhost:3000/ready
+GET {{base_url}}/ready
 
 ### Health check with compression
 # Request with Accept-Encoding header
-GET http://localhost:3000/health
+GET {{base_url}}/health
 Accept-Encoding: gzip
 
 ### OpenAPI JSON spec
 # Returns the raw OpenAPI 3.0 JSON specification
-GET http://localhost:3000/api-doc/openapi.json
+GET {{base_url}}/api-doc/openapi.json
 
 ### Swagger UI
-# Open in browser: http://localhost:3000/swagger-ui
+# Open in browser: {{base_url}}/swagger-ui

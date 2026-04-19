@@ -1,22 +1,22 @@
 ### Portfolio endpoints — Makima API
 ### Base URL: http://localhost:3000
 
-@base = http://localhost:3000
-# Replace <access_token> with the JWT returned from register or login.
-@token = <access_token>
-# Replace <portfolio_id> with a real portfolio UUID.
+@base_url = http://localhost:3000
+# Replace with the JWT returned from register or login.
+@access_token = <access_token>
+# Replace with a real portfolio UUID.
 @portfolio_id = <portfolio_id>
 
 ### List portfolios (paginated)
-GET {{base}}/api/v1/portfolios?page=1&limit=25
-Authorization: Bearer {{token}}
+GET {{base_url}}/api/v1/portfolios?page=1&limit=25
+Authorization: Bearer {{access_token}}
 
 ###
 
 ### Create portfolio
-POST {{base}}/api/v1/portfolios
+POST {{base_url}}/api/v1/portfolios
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{access_token}}
 
 {
   "name": "Fineco Account",
@@ -26,9 +26,9 @@ Authorization: Bearer {{token}}
 ###
 
 ### Create portfolio without description
-POST {{base}}/api/v1/portfolios
+POST {{base_url}}/api/v1/portfolios
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{access_token}}
 
 {
   "name": "Long-term Bonds"
@@ -37,15 +37,15 @@ Authorization: Bearer {{token}}
 ###
 
 ### Get portfolio by ID
-GET {{base}}/api/v1/portfolios/{{portfolio_id}}
-Authorization: Bearer {{token}}
+GET {{base_url}}/api/v1/portfolios/{{portfolio_id}}
+Authorization: Bearer {{access_token}}
 
 ###
 
 ### Update portfolio
-PUT {{base}}/api/v1/portfolios/{{portfolio_id}}
+PUT {{base_url}}/api/v1/portfolios/{{portfolio_id}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{access_token}}
 
 {
   "name": "Fineco — Equities",
@@ -55,9 +55,9 @@ Authorization: Bearer {{token}}
 ###
 
 ### Update portfolio — clear description
-PUT {{base}}/api/v1/portfolios/{{portfolio_id}}
+PUT {{base_url}}/api/v1/portfolios/{{portfolio_id}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{access_token}}
 
 {
   "name": "Fineco Account",
@@ -67,15 +67,15 @@ Authorization: Bearer {{token}}
 ###
 
 ### Delete portfolio
-DELETE {{base}}/api/v1/portfolios/{{portfolio_id}}
-Authorization: Bearer {{token}}
+DELETE {{base_url}}/api/v1/portfolios/{{portfolio_id}}
+Authorization: Bearer {{access_token}}
 
 ###
 
 ### Create portfolio with empty name — expect 400
-POST {{base}}/api/v1/portfolios
+POST {{base_url}}/api/v1/portfolios
 Content-Type: application/json
-Authorization: Bearer {{token}}
+Authorization: Bearer {{access_token}}
 
 {
   "name": ""

@@ -1,24 +1,25 @@
 ### Transaction endpoints — Makima API
 ### Base URL: http://localhost:3000
 
-@base = http://localhost:3000
-@token = <access_token>
+@base_url = http://localhost:3000
+@access_token = <access_token>
 @portfolio_id = <portfolio_id>
 @transaction_id = <transaction_id>
+@asset_isin = IE00BK5BQT80
 
 ### List transactions in a portfolio
-GET {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions?page=1&limit=25&transaction_type=Buy
-Authorization: Bearer {{token}}
+GET {{base_url}}/api/v1/portfolios/{{portfolio_id}}/transactions?page=1&limit=25&transaction_type=Buy
+Authorization: Bearer {{access_token}}
 
 ###
 
 ### Create buy transaction
-POST {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions
-Authorization: Bearer {{token}}
+POST {{base_url}}/api/v1/portfolios/{{portfolio_id}}/transactions
+Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
 {
-  "asset_isin": "IE00BK5BQT80",
+  "asset_isin": "{{asset_isin}}",
   "transaction_type": "Buy",
   "date": "2025-01-10",
   "settlement_date": "2025-01-12",
@@ -32,8 +33,8 @@ Content-Type: application/json
 ###
 
 ### Create dividend transaction
-POST {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions
-Authorization: Bearer {{token}}
+POST {{base_url}}/api/v1/portfolios/{{portfolio_id}}/transactions
+Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
 {
@@ -49,18 +50,18 @@ Content-Type: application/json
 ###
 
 ### Get transaction by ID
-GET {{base}}/api/v1/transactions/{{transaction_id}}
-Authorization: Bearer {{token}}
+GET {{base_url}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{access_token}}
 
 ###
 
 ### Update transaction
-PUT {{base}}/api/v1/transactions/{{transaction_id}}
-Authorization: Bearer {{token}}
+PUT {{base_url}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{access_token}}
 Content-Type: application/json
 
 {
-  "asset_isin": "IE00BK5BQT80",
+  "asset_isin": "{{asset_isin}}",
   "transaction_type": "Buy",
   "date": "2025-01-11",
   "quantity": "12",
@@ -73,5 +74,5 @@ Content-Type: application/json
 ###
 
 ### Delete transaction
-DELETE {{base}}/api/v1/transactions/{{transaction_id}}
-Authorization: Bearer {{token}}
+DELETE {{base_url}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{access_token}}

@@ -1,7 +1,15 @@
+### Position endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base_url = http://localhost:3000
+# Replace with the JWT returned from register or login.
+@access_token = <access_token>
+@portfolio_id = <portfolio_id>
+
 ### List open positions in a portfolio
-GET http://localhost:3000/api/v1/portfolios/{{portfolio_id}}/positions
+GET {{base_url}}/api/v1/portfolios/{{portfolio_id}}/positions
 Authorization: Bearer {{access_token}}
 
 ### List positions including closed ones
-GET http://localhost:3000/api/v1/portfolios/{{portfolio_id}}/positions?show_closed=true
+GET {{base_url}}/api/v1/portfolios/{{portfolio_id}}/positions?show_closed=true
 Authorization: Bearer {{access_token}}

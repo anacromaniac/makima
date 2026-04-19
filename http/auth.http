@@ -1,48 +1,53 @@
 ### Auth endpoints — Makima API
 ### Base URL: http://localhost:3000
 
-@base = http://localhost:3000
+@base_url = http://localhost:3000
+@email = user@example.com
+@password = secretpassword123
+@new_password = newsecretpassword456
+# Replace with the value returned from register or login.
+@refresh_token = <refresh_token>
+# Replace with the JWT returned from register or login.
+@access_token = <access_token>
 
 ### Register a new user
-POST {{base}}/api/v1/auth/register
+POST {{base_url}}/api/v1/auth/register
 Content-Type: application/json
 
 {
-  "email": "user@example.com",
-  "password": "secretpassword123"
+  "email": "{{email}}",
+  "password": "{{password}}"
 }
 
 ###
 
 ### Login
-POST {{base}}/api/v1/auth/login
+POST {{base_url}}/api/v1/auth/login
 Content-Type: application/json
 
 {
-  "email": "user@example.com",
-  "password": "secretpassword123"
+  "email": "{{email}}",
+  "password": "{{password}}"
 }
 
 ###
 
 ### Refresh token
-# Replace <refresh_token> with the value returned from register or login.
-POST {{base}}/api/v1/auth/refresh
+POST {{base_url}}/api/v1/auth/refresh
 Content-Type: application/json
 
 {
-  "refresh_token": "<refresh_token>"
+  "refresh_token": "{{refresh_token}}"
 }
 
 ###
 
 ### Change password (requires Authorization header)
-# Replace <access_token> with the JWT returned from register or login.
-PUT {{base}}/api/v1/auth/password
+PUT {{base_url}}/api/v1/auth/password
 Content-Type: application/json
-Authorization: Bearer <access_token>
+Authorization: Bearer {{access_token}}
 
 {
-  "old_password": "secretpassword123",
-  "new_password": "newsecretpassword456"
+  "old_password": "{{password}}",
+  "new_password": "{{new_password}}"
 }
