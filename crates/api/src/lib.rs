@@ -8,6 +8,7 @@ pub mod assets;
 pub mod auth;
 pub mod portfolios;
 mod state;
+pub mod transactions;
 pub mod users;
 
 use std::sync::Arc;
@@ -17,6 +18,9 @@ use application::{
     assets::{AssetService, AssetTickerLookup},
     auth::AuthService,
     portfolios::PortfolioService,
+    transactions::{
+        AssetMetadataLookup, ExchangeRateLookup, ResolvedAssetMetadata, TransactionService,
+    },
     users::UserService,
 };
 use axum::{
@@ -27,6 +31,7 @@ use axum::{
     routing::get,
 };
 use price_fetcher::openfigi::OpenFigiClient;
+use price_fetcher::yahoo::YahooFinanceClient;
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::Migrator;
 use tower::ServiceBuilder;
@@ -45,6 +50,10 @@ use utoipa_swagger_ui::SwaggerUi;
 
 pub use state::AppState;
 
+pub trait AssetReferenceLookup: AssetTickerLookup + AssetMetadataLookup {}
+
+impl<T> AssetReferenceLookup for T where T: AssetTickerLookup + AssetMetadataLookup {}
+
 struct OpenFigiTickerLookup {
     client: OpenFigiClient,
 }
@@ -53,6 +62,32 @@ struct OpenFigiTickerLookup {
 impl AssetTickerLookup for OpenFigiTickerLookup {
     async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
         self.client.lookup_yahoo_ticker(isin).await
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetMetadataLookup for OpenFigiTickerLookup {
+    async fn lookup_asset_metadata(&self, isin: &str) -> Option<ResolvedAssetMetadata> {
+        let asset = self.client.lookup_asset_metadata(isin).await?;
+        Some(ResolvedAssetMetadata {
+            isin: asset.isin,
+            yahoo_ticker: asset.yahoo_ticker,
+            name: asset.name,
+            asset_class: map_openfigi_asset_class(asset.security_type2.as_deref()),
+            currency: asset.currency.unwrap_or_else(|| "EUR".to_string()),
+            exchange: asset.exchange,
+        })
+    }
+}
+
+struct YahooExchangeRateLookup {
+    client: YahooFinanceClient,
+}
+
+#[async_trait::async_trait]
+impl ExchangeRateLookup for YahooExchangeRateLookup {
+    async fn lookup_rate_to_eur(&self, currency: &str) -> Option<rust_decimal::Decimal> {
+        self.client.lookup_exchange_rate(currency, "EUR").await
     }
 }
 
@@ -128,21 +163,31 @@ impl AppConfig {
 pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
     let openfigi_client =
         OpenFigiClient::from_env().expect("failed to construct OpenFIGI client from environment");
+    let yahoo_client = YahooFinanceClient::from_env()
+        .expect("failed to construct Yahoo Finance client from environment");
     build_app_state_with_lookup(
         pool,
         jwt_secret,
         Arc::new(OpenFigiTickerLookup {
             client: openfigi_client,
         }),
+        Arc::new(YahooExchangeRateLookup {
+            client: yahoo_client,
+        }),
     )
 }
 
-/// Build the shared application state with an injected ticker lookup adapter.
-pub fn build_app_state_with_lookup(
+/// Build the shared application state with injected external lookup adapters.
+pub fn build_app_state_with_lookup<L, E>(
     pool: sqlx::PgPool,
     jwt_secret: String,
-    asset_ticker_lookup: Arc<dyn AssetTickerLookup>,
-) -> AppState {
+    asset_reference_lookup: Arc<L>,
+    exchange_rate_lookup: Arc<E>,
+) -> AppState
+where
+    L: AssetReferenceLookup + 'static,
+    E: ExchangeRateLookup + 'static,
+{
     let user_repo = Arc::new(db::repositories::user_repo::PgUserRepository::new(
         pool.clone(),
     ));
@@ -153,13 +198,25 @@ pub fn build_app_state_with_lookup(
     let asset_repo = Arc::new(db::repositories::asset_repo::PgAssetRepository::new(
         pool.clone(),
     ));
+    let transaction_repo =
+        Arc::new(db::repositories::transaction_repo::PgTransactionRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(
         user_repo.clone(),
         refresh_token_repo.clone(),
         jwt_secret.clone(),
     ));
-    let asset_service = Arc::new(AssetService::new(asset_repo, asset_ticker_lookup));
-    let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo));
+    let asset_service = Arc::new(AssetService::new(
+        asset_repo.clone(),
+        asset_reference_lookup.clone(),
+    ));
+    let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo.clone()));
+    let transaction_service = Arc::new(TransactionService::new(
+        portfolio_repo,
+        asset_repo,
+        transaction_repo,
+        asset_reference_lookup,
+        exchange_rate_lookup,
+    ));
     let user_service = Arc::new(UserService::new(user_repo));
 
     AppState {
@@ -167,6 +224,7 @@ pub fn build_app_state_with_lookup(
         auth_service,
         asset_service,
         portfolio_service,
+        transaction_service,
         user_service,
         jwt_secret,
     }
@@ -192,6 +250,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         .merge(users::handlers::users_router())
         .merge(portfolios::handlers::portfolios_router())
         .merge(assets::handlers::assets_router())
+        .merge(transactions::handlers::transactions_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(app_state)
         .layer(middleware)
@@ -218,6 +277,11 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::handlers::get_portfolio,
         portfolios::handlers::update_portfolio,
         portfolios::handlers::delete_portfolio,
+        transactions::handlers::list_transactions,
+        transactions::handlers::create_transaction,
+        transactions::handlers::get_transaction,
+        transactions::handlers::update_transaction,
+        transactions::handlers::delete_transaction,
     ),
     components(schemas(
         HealthResponse,
@@ -238,6 +302,11 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::dto::PortfolioResponse,
         portfolios::handlers::PaginatedPortfolioResponse,
         portfolios::handlers::PaginationMetaResponse,
+        transactions::dto::CreateTransactionRequest,
+        transactions::dto::UpdateTransactionRequest,
+        transactions::dto::TransactionResponse,
+        transactions::handlers::PaginatedTransactionResponse,
+        transactions::handlers::PaginationMetaResponse,
     )),
     modifiers(&SecurityAddon),
     info(
@@ -249,6 +318,23 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
 struct ApiDoc;
 
 struct SecurityAddon;
+
+fn map_openfigi_asset_class(security_type2: Option<&str>) -> domain::AssetClass {
+    match security_type2
+        .unwrap_or_default()
+        .to_ascii_uppercase()
+        .as_str()
+    {
+        "BOND" | "CORPORATE BOND" | "GOVERNMENT BOND" => domain::AssetClass::Bond,
+        "ETF" | "ETP" | "COMMON STOCK" | "PREFERRED STOCK" | "REIT" | "ADR" | "DR" => {
+            domain::AssetClass::Stock
+        }
+        "COMMODITY" => domain::AssetClass::Commodity,
+        "CRYPTOCURRENCY" => domain::AssetClass::Crypto,
+        "MONEY MARKET" | "CASH" => domain::AssetClass::CashEquivalent,
+        _ => domain::AssetClass::Alternative,
+    }
+}
 
 impl utoipa::Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {

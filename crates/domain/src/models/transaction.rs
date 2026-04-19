@@ -98,3 +98,47 @@ pub struct NewTransaction {
     /// SHA-256 hash for broker-import duplicate detection.
     pub import_hash: Option<String>,
 }
+
+/// Supported filters for transaction listings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TransactionFilters {
+    /// Restrict results to a specific transaction type.
+    pub transaction_type: Option<TransactionType>,
+    /// Restrict results to a specific asset.
+    pub asset_id: Option<Uuid>,
+    /// Inclusive lower bound for the trade date.
+    pub date_from: Option<NaiveDate>,
+    /// Inclusive upper bound for the trade date.
+    pub date_to: Option<NaiveDate>,
+}
+
+/// Mutable transaction fields accepted by update operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateTransaction {
+    /// Asset being traded.
+    pub asset_id: Uuid,
+    /// Kind of transaction.
+    pub transaction_type: TransactionType,
+    /// Trade date.
+    pub date: NaiveDate,
+    /// Settlement date, if applicable.
+    pub settlement_date: Option<NaiveDate>,
+    /// Number of units. `None` for Dividend/Coupon.
+    pub quantity: Option<Decimal>,
+    /// Price per unit. `None` for Dividend/Coupon.
+    pub unit_price: Option<Decimal>,
+    /// Brokerage commission.
+    pub commission: Decimal,
+    /// Currency of the transaction amounts.
+    pub currency: String,
+    /// Exchange rate to the portfolio's base currency.
+    pub exchange_rate_to_base: Decimal,
+    /// Gross distribution amount (Dividend/Coupon).
+    pub gross_amount: Option<Decimal>,
+    /// Tax withheld at source (Dividend/Coupon).
+    pub tax_withheld: Option<Decimal>,
+    /// Net distribution after tax (Dividend/Coupon).
+    pub net_amount: Option<Decimal>,
+    /// Free-form user notes.
+    pub notes: Option<String>,
+}

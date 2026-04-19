@@ -1,0 +1,77 @@
+### Transaction endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base = http://localhost:3000
+@token = <access_token>
+@portfolio_id = <portfolio_id>
+@transaction_id = <transaction_id>
+
+### List transactions in a portfolio
+GET {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions?page=1&limit=25&transaction_type=Buy
+Authorization: Bearer {{token}}
+
+###
+
+### Create buy transaction
+POST {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "asset_isin": "IE00BK5BQT80",
+  "transaction_type": "Buy",
+  "date": "2025-01-10",
+  "settlement_date": "2025-01-12",
+  "quantity": "10",
+  "unit_price": "100",
+  "commission": "1.50",
+  "currency": "EUR",
+  "notes": "Initial position"
+}
+
+###
+
+### Create dividend transaction
+POST {{base}}/api/v1/portfolios/{{portfolio_id}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "asset_isin": "US0378331005",
+  "transaction_type": "Dividend",
+  "date": "2025-02-01",
+  "gross_amount": "12.50",
+  "tax_withheld": "2.50",
+  "net_amount": "10.00",
+  "currency": "USD"
+}
+
+###
+
+### Get transaction by ID
+GET {{base}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{token}}
+
+###
+
+### Update transaction
+PUT {{base}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "asset_isin": "IE00BK5BQT80",
+  "transaction_type": "Buy",
+  "date": "2025-01-11",
+  "quantity": "12",
+  "unit_price": "101",
+  "commission": "2.00",
+  "currency": "EUR",
+  "notes": "Adjusted quantity"
+}
+
+###
+
+### Delete transaction
+DELETE {{base}}/api/v1/transactions/{{transaction_id}}
+Authorization: Bearer {{token}}

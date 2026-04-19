@@ -3,7 +3,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use api::{AppState, MIGRATOR, auth::jwt::Claims, build_app, build_app_state_with_lookup};
-use application::assets::AssetTickerLookup;
+use application::{
+    assets::AssetTickerLookup,
+    transactions::{AssetMetadataLookup, ExchangeRateLookup, ResolvedAssetMetadata},
+};
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -11,6 +14,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use rust_decimal::Decimal;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
@@ -38,10 +42,27 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn new() -> Self {
-        Self::new_with_asset_lookup(Arc::new(StaticAssetTickerLookup::empty())).await
+        Self::new_with_lookups(
+            Arc::new(StaticAssetReferenceLookup::empty()),
+            Arc::new(StaticExchangeRateLookup::empty()),
+        )
+        .await
     }
 
-    pub async fn new_with_asset_lookup(asset_ticker_lookup: Arc<dyn AssetTickerLookup>) -> Self {
+    pub async fn new_with_asset_lookup(
+        asset_reference_lookup: Arc<StaticAssetReferenceLookup>,
+    ) -> Self {
+        Self::new_with_lookups(
+            asset_reference_lookup,
+            Arc::new(StaticExchangeRateLookup::empty()),
+        )
+        .await
+    }
+
+    pub async fn new_with_lookups(
+        asset_reference_lookup: Arc<StaticAssetReferenceLookup>,
+        exchange_rate_lookup: Arc<StaticExchangeRateLookup>,
+    ) -> Self {
         let postgres = Postgres::default()
             .start()
             .await
@@ -68,8 +89,12 @@ impl TestApp {
             .await
             .expect("failed to run migrations for test container");
 
-        let state =
-            build_app_state_with_lookup(pool, TEST_JWT_SECRET.to_string(), asset_ticker_lookup);
+        let state = build_app_state_with_lookup(
+            pool,
+            TEST_JWT_SECRET.to_string(),
+            asset_reference_lookup,
+            exchange_rate_lookup,
+        );
         let app = build_app(state.clone(), &["http://localhost:3000".to_string()]);
 
         Self {
@@ -222,6 +247,73 @@ impl StaticAssetTickerLookup {
 impl AssetTickerLookup for StaticAssetTickerLookup {
     async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
         self.by_isin.get(isin).cloned().flatten()
+    }
+}
+
+pub struct StaticAssetReferenceLookup {
+    by_isin: HashMap<String, ResolvedAssetMetadata>,
+}
+
+impl StaticAssetReferenceLookup {
+    pub fn empty() -> Self {
+        Self {
+            by_isin: HashMap::new(),
+        }
+    }
+
+    pub fn with_assets(
+        entries: impl IntoIterator<Item = (impl Into<String>, ResolvedAssetMetadata)>,
+    ) -> Self {
+        let by_isin = entries
+            .into_iter()
+            .map(|(isin, asset)| (isin.into(), asset))
+            .collect();
+        Self { by_isin }
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetTickerLookup for StaticAssetReferenceLookup {
+    async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
+        self.by_isin
+            .get(isin)
+            .and_then(|asset| asset.yahoo_ticker.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetMetadataLookup for StaticAssetReferenceLookup {
+    async fn lookup_asset_metadata(&self, isin: &str) -> Option<ResolvedAssetMetadata> {
+        self.by_isin.get(isin).cloned()
+    }
+}
+
+pub struct StaticExchangeRateLookup {
+    by_currency: HashMap<String, Decimal>,
+}
+
+impl StaticExchangeRateLookup {
+    pub fn empty() -> Self {
+        Self {
+            by_currency: HashMap::new(),
+        }
+    }
+
+    pub fn with_rates(entries: impl IntoIterator<Item = (impl Into<String>, Decimal)>) -> Self {
+        let by_currency = entries
+            .into_iter()
+            .map(|(currency, rate)| (currency.into().to_ascii_uppercase(), rate))
+            .collect();
+        Self { by_currency }
+    }
+}
+
+#[async_trait::async_trait]
+impl ExchangeRateLookup for StaticExchangeRateLookup {
+    async fn lookup_rate_to_eur(&self, currency: &str) -> Option<Decimal> {
+        self.by_currency
+            .get(&currency.to_ascii_uppercase())
+            .copied()
     }
 }
 

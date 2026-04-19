@@ -1,9 +1,26 @@
-//! OpenFIGI client for ISIN-to-ticker lookup.
+//! OpenFIGI client for ISIN-based asset reference lookups.
 
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 const OPENFIGI_URL: &str = "https://api.openfigi.com/v3/mapping";
+
+/// Asset metadata resolved from OpenFIGI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenFigiAssetMetadata {
+    /// International Securities Identification Number.
+    pub isin: String,
+    /// Yahoo Finance ticker symbol, if a mapping can be inferred.
+    pub yahoo_ticker: Option<String>,
+    /// Human-readable security name.
+    pub name: String,
+    /// OpenFIGI-reported security type.
+    pub security_type2: Option<String>,
+    /// Trading currency, if present.
+    pub currency: Option<String>,
+    /// Exchange code used for the listing.
+    pub exchange: Option<String>,
+}
 
 /// HTTP client for OpenFIGI mapping requests.
 #[derive(Clone)]
@@ -50,6 +67,16 @@ impl OpenFigiClient {
     /// This method is fail-open by design: any transport or parsing issue is
     /// logged and converted to `None`.
     pub async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
+        self.lookup_asset_metadata(isin)
+            .await
+            .and_then(|asset| asset.yahoo_ticker)
+    }
+
+    /// Resolve OpenFIGI metadata for an ISIN.
+    ///
+    /// This method is fail-open by design: any transport or parsing issue is
+    /// logged and converted to `None`.
+    pub async fn lookup_asset_metadata(&self, isin: &str) -> Option<OpenFigiAssetMetadata> {
         let response = match self
             .http
             .post(&self.base_url)
@@ -81,7 +108,7 @@ impl OpenFigiClient {
             }
         };
 
-        extract_yahoo_ticker(&payload)
+        extract_asset_metadata(isin, &payload)
     }
 }
 
@@ -102,6 +129,7 @@ struct OpenFigiMappingResponse {
 
 #[derive(Debug, Deserialize)]
 struct OpenFigiInstrument {
+    name: Option<String>,
     ticker: Option<String>,
     #[serde(rename = "compositeFIGI")]
     _composite_figi: Option<String>,
@@ -109,10 +137,14 @@ struct OpenFigiInstrument {
     composite_ticker: Option<String>,
     #[serde(rename = "exchCode")]
     exch_code: Option<String>,
+    currency: Option<String>,
     security_type2: Option<String>,
 }
 
-fn extract_yahoo_ticker(payload: &[OpenFigiMappingResponse]) -> Option<String> {
+fn extract_asset_metadata(
+    isin: &str,
+    payload: &[OpenFigiMappingResponse],
+) -> Option<OpenFigiAssetMetadata> {
     let instrument = payload.first()?.data.as_ref()?.iter().find(|instrument| {
         instrument
             .security_type2
@@ -132,9 +164,18 @@ fn extract_yahoo_ticker(payload: &[OpenFigiMappingResponse]) -> Option<String> {
 
     let suffix = instrument.exch_code.as_deref().and_then(exchange_suffix);
 
-    Some(match suffix {
+    let yahoo_ticker = Some(match suffix {
         Some(suffix) if !ticker.ends_with(suffix) => format!("{ticker}{suffix}"),
         _ => ticker.to_string(),
+    });
+
+    Some(OpenFigiAssetMetadata {
+        isin: isin.to_string(),
+        yahoo_ticker,
+        name: instrument.name.clone().unwrap_or_else(|| isin.to_string()),
+        security_type2: instrument.security_type2.clone(),
+        currency: instrument.currency.clone(),
+        exchange: instrument.exch_code.clone(),
     })
 }
 
@@ -164,7 +205,7 @@ fn exchange_suffix(exchange: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpenFigiMappingResponse, extract_yahoo_ticker};
+    use super::{OpenFigiMappingResponse, extract_asset_metadata};
 
     #[test]
     fn test_extract_yahoo_ticker_uses_composite_ticker_and_suffix() {
@@ -173,7 +214,8 @@ mod tests {
         )
         .expect("payload should deserialize");
 
-        assert_eq!(extract_yahoo_ticker(&payload).as_deref(), Some("VWCE.MI"));
+        let asset = extract_asset_metadata("IE00BK5BQT80", &payload).expect("asset should exist");
+        assert_eq!(asset.yahoo_ticker.as_deref(), Some("VWCE.MI"));
     }
 
     #[test]
@@ -181,6 +223,6 @@ mod tests {
         let payload = serde_json::from_str::<Vec<OpenFigiMappingResponse>>(r#"[{"data":[]}]"#)
             .expect("payload should deserialize");
 
-        assert_eq!(extract_yahoo_ticker(&payload), None);
+        assert_eq!(extract_asset_metadata("IE00BK5BQT80", &payload), None);
     }
 }

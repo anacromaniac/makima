@@ -24,5 +24,6 @@ pub use error::{DomainError, RepositoryError};
 pub use logic::*;
 pub use models::*;
 pub use traits::{
-    AssetRepository, BrokerImporter, PortfolioRepository, RefreshTokenRepository, UserRepository,
+    AssetRepository, BrokerImporter, PortfolioRepository, RefreshTokenRepository,
+    TransactionRepository, UserRepository,
 };

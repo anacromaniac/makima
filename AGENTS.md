@@ -96,13 +96,14 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - tower-http `util` feature is required for `ServiceBuilderExt` extension methods.
 - TimeoutLayer::new() is deprecated; use `TimeoutLayer::with_status_code()` instead.
 - utoipa requires `features = ["uuid", "chrono"]` in the `api` crate to support `Uuid` and `DateTime<Utc>` fields in `#[derive(ToSchema)]`.
+- utoipa does not provide `ToSchema` support for `rust_decimal::Decimal` in the current setup. API DTO fields using `Decimal` must annotate the OpenAPI schema explicitly with `#[schema(value_type = String)]` (or `Option<String>` for optional values).
 - `AuthenticatedUser` derives `Debug` (it only contains a `Uuid`) so handlers accepting it can be annotated with `#[tracing::instrument]`.
 
 ### Database
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).
 - Migrations are embedded in the binary via `sqlx::migrate!()` and run automatically on startup.
 - **Migration path resolution**: In a Cargo workspace, `sqlx::migrate!()` resolves paths relative to the crate's `Cargo.toml`, not the workspace root. The `api` crate embeds migrations, so use `sqlx::migrate!("../../migrations")` from `crates/api/` to reference migrations at the project root. When building with Docker, ensure the `migrations` directory is copied into the build context.
-- **sqlx type features**: The workspace sqlx dependency must include the `uuid` and `chrono` features so that `Uuid` and `DateTime<Utc>` can be bound and decoded in repository queries.
+- **sqlx type features**: The workspace sqlx dependency must include the `uuid`, `chrono`, and `rust_decimal` features so that `Uuid`, `DateTime<Utc>`, and `Decimal` values can be bound and decoded in repository queries.
 - **Repository row types**: Each repository defines an internal `*Row` struct (e.g. `UserRow`) deriving `sqlx::FromRow` that mirrors the DB columns exactly. A `From<*Row> for DomainType` impl converts to the domain model. This keeps sqlx out of the domain crate.
 - Use PostgreSQL `NUMERIC` type for financial amounts, mapped to `rust_decimal::Decimal`.
 - Column naming: `snake_case`. Table naming: plural `snake_case` (e.g. `transactions`, `price_history`).
@@ -125,6 +126,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - **Paginated list endpoints — local schema type required**: `domain::PaginationMeta` cannot derive `ToSchema` (the domain crate has no utoipa dependency). Each feature that exposes a paginated list endpoint must define a local `PaginationMetaResponse` struct in its `handlers.rs` that mirrors `PaginationMeta` and derives `ToSchema`. The `From<PaginatedResult<T>>` impl on the paginated response type converts the domain type to the local schema type.
 - **Handler validation error pattern**: When a handler can fail with both a garde validation error and a service error, define a `pub(crate) <Feature>HandlerError` enum in `handlers.rs` that has `Validation(String)` and `Service(<Feature>Error)` variants, both implementing `IntoResponse`. Use this as the `Err` type so the handler returns a single named error type. See `portfolios/handlers.rs` → `PortfolioHandlerError` as the template.
 - **Ownership isolation**: Handlers that operate on a resource owned by a user must return 404 (not 403) when the resource does not exist *or* belongs to a different user. This prevents leaking the existence of other users' data. Implement the check in the service layer by calling `find_by_id` and filtering on `user_id`.
+- **Transaction asset auto-creation**: For transaction create/update flows, handlers pass `asset_isin` to the application service. The service is responsible for resolving the shared asset by ISIN and auto-creating it through an injected reference-data adapter when it does not exist. Keep this logic out of handlers.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -233,7 +235,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2.2a: Authenticated user integration tests retrofit
 - [x] 2.3a: Portfolio integration tests retrofit
 - [x] 2c: Assets (CRUD, OpenFIGI integration)
-- [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
+- [x] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [ ] 2e: Positions (on-the-fly calculation, closed position flag)
 - [ ] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
 - [ ] 2g: Exchange rates (Yahoo Finance, daily job)

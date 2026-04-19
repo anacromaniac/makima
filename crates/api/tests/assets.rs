@@ -2,9 +2,11 @@ mod support;
 
 use std::sync::Arc;
 
+use application::transactions::ResolvedAssetMetadata;
 use axum::http::{Method, StatusCode};
+use domain::AssetClass;
 use serde_json::json;
-use support::{StaticAssetTickerLookup, TestApp, expired_access_token, json_value};
+use support::{StaticAssetReferenceLookup, TestApp, expired_access_token, json_value};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -38,11 +40,19 @@ async fn test_assets_invalid_token_returns_401() {
 
 #[tokio::test]
 async fn test_create_asset_without_ticker_uses_openfigi_mapping() {
-    let app = TestApp::new_with_asset_lookup(Arc::new(StaticAssetTickerLookup::with_mapping([(
-        "IE00BK5BQT80",
-        Some("VWCE.MI"),
-    )])))
-    .await;
+    let app =
+        TestApp::new_with_asset_lookup(Arc::new(StaticAssetReferenceLookup::with_assets([(
+            "IE00BK5BQT80",
+            ResolvedAssetMetadata {
+                isin: "IE00BK5BQT80".to_string(),
+                yahoo_ticker: Some("VWCE.MI".to_string()),
+                name: "Vanguard FTSE All-World UCITS ETF".to_string(),
+                asset_class: AssetClass::Stock,
+                currency: "EUR".to_string(),
+                exchange: Some("Milan".to_string()),
+            },
+        )])))
+        .await;
     let auth = app
         .register_user_ok("alice@example.com", "password123")
         .await;

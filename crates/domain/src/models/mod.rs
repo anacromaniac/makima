@@ -20,5 +20,7 @@ pub use pagination::{PaginatedResult, PaginationMeta, PaginationParams};
 pub use portfolio::{NewPortfolio, Portfolio};
 pub use price::{NewPriceRecord, PriceRecord, PriceSource};
 pub use refresh_token::{NewRefreshToken, RefreshToken};
-pub use transaction::{NewTransaction, Transaction, TransactionType};
+pub use transaction::{
+    NewTransaction, Transaction, TransactionFilters, TransactionType, UpdateTransaction,
+};
 pub use user::{NewUser, User};

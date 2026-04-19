@@ -41,7 +41,7 @@ sha2 = "0.10"
 rand = "0.8"
 
 # Database
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "migrate", "uuid", "chrono"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "migrate", "uuid", "chrono", "rust_decimal"] }
 
 # Configuration
 config = "0.15"

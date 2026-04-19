@@ -15,3 +15,4 @@
 //! - Rate limiting and retry logic for API calls
 
 pub mod openfigi;
+pub mod yahoo;

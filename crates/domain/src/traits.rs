@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::error::{DomainError, RepositoryError};
 use crate::models::{
     Asset, AssetFilters, NewAsset, NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult,
-    PaginationParams, Portfolio, RefreshToken, UpdateAsset, User,
+    PaginationParams, Portfolio, RefreshToken, Transaction, TransactionFilters, UpdateAsset,
+    UpdateTransaction, User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -92,6 +93,51 @@ pub trait AssetRepository: Send + Sync {
         id: Uuid,
         yahoo_ticker: Option<&str>,
     ) -> Result<(), RepositoryError>;
+}
+
+/// Persistent storage operations for transactions.
+#[async_trait]
+pub trait TransactionRepository: Send + Sync {
+    /// Persist a new transaction record.
+    async fn create(
+        &self,
+        new_transaction: &NewTransaction,
+    ) -> Result<Transaction, RepositoryError>;
+
+    /// Find a transaction by primary key. Returns `None` if not found.
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Transaction>, RepositoryError>;
+
+    /// List transactions in a portfolio with pagination and optional filters.
+    async fn find_by_portfolio(
+        &self,
+        portfolio_id: Uuid,
+        pagination: &PaginationParams,
+        filters: &TransactionFilters,
+    ) -> Result<PaginatedResult<Transaction>, RepositoryError>;
+
+    /// Return all transactions for a single asset in a portfolio, ordered chronologically.
+    async fn list_by_asset(
+        &self,
+        portfolio_id: Uuid,
+        asset_id: Uuid,
+    ) -> Result<Vec<Transaction>, RepositoryError>;
+
+    /// Replace the mutable fields of an existing transaction.
+    async fn update(
+        &self,
+        id: Uuid,
+        update: &UpdateTransaction,
+    ) -> Result<Transaction, RepositoryError>;
+
+    /// Hard-delete a transaction by ID.
+    async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
+
+    /// Return the currently held quantity for an asset inside a portfolio.
+    async fn get_held_quantity(
+        &self,
+        portfolio_id: Uuid,
+        asset_id: Uuid,
+    ) -> Result<rust_decimal::Decimal, RepositoryError>;
 }
 
 /// Persistent storage operations for user accounts.
