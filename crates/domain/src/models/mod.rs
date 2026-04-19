@@ -14,7 +14,7 @@ pub mod transaction;
 pub mod user;
 
 // Re-export enums and models for convenient access.
-pub use asset::{Asset, AssetClass, NewAsset};
+pub use asset::{Asset, AssetClass, AssetFilters, NewAsset, UpdateAsset};
 pub use exchange_rate::{ExchangeRate, NewExchangeRate};
 pub use pagination::{PaginatedResult, PaginationMeta, PaginationParams};
 pub use portfolio::{NewPortfolio, Portfolio};

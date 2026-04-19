@@ -23,4 +23,6 @@ pub mod traits;
 pub use error::{DomainError, RepositoryError};
 pub use logic::*;
 pub use models::*;
-pub use traits::{BrokerImporter, PortfolioRepository, RefreshTokenRepository, UserRepository};
+pub use traits::{
+    AssetRepository, BrokerImporter, PortfolioRepository, RefreshTokenRepository, UserRepository,
+};

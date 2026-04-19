@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::error::{DomainError, RepositoryError};
 use crate::models::{
-    NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult, PaginationParams, Portfolio,
-    RefreshToken, User,
+    Asset, AssetFilters, NewAsset, NewPortfolio, NewRefreshToken, NewTransaction, PaginatedResult,
+    PaginationParams, Portfolio, RefreshToken, UpdateAsset, User,
 };
 
 // ── Broker import ────────────────────────────────────────────────────────────
@@ -60,6 +60,38 @@ pub trait PortfolioRepository: Send + Sync {
 
     /// Hard-delete a portfolio by ID. Cascade deletes its transactions via FK.
     async fn delete(&self, id: Uuid) -> Result<(), RepositoryError>;
+}
+
+/// Persistent storage operations for shared assets.
+///
+/// Assets are global reference data and are not owned by a specific user.
+#[async_trait]
+pub trait AssetRepository: Send + Sync {
+    /// Persist a new asset record.
+    async fn create(&self, new_asset: &NewAsset) -> Result<Asset, RepositoryError>;
+
+    /// Find an asset by primary key. Returns `None` if not found.
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<Asset>, RepositoryError>;
+
+    /// Find an asset by ISIN. Returns `None` if not found.
+    async fn find_by_isin(&self, isin: &str) -> Result<Option<Asset>, RepositoryError>;
+
+    /// List assets using pagination and optional shared filters.
+    async fn list(
+        &self,
+        pagination: &PaginationParams,
+        filters: &AssetFilters,
+    ) -> Result<PaginatedResult<Asset>, RepositoryError>;
+
+    /// Update the mutable fields of an asset identified by primary key.
+    async fn update(&self, id: Uuid, update: &UpdateAsset) -> Result<Asset, RepositoryError>;
+
+    /// Update only the Yahoo Finance ticker for an existing asset.
+    async fn update_yahoo_ticker(
+        &self,
+        id: Uuid,
+        yahoo_ticker: Option<&str>,
+    ) -> Result<(), RepositoryError>;
 }
 
 /// Persistent storage operations for user accounts.

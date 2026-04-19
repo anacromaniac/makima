@@ -13,3 +13,5 @@
 //! - HTTP client via reqwest (rustls-tls only)
 //! - Periodic job scheduling via tokio-cron-scheduler
 //! - Rate limiting and retry logic for API calls
+
+pub mod openfigi;

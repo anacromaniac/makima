@@ -56,6 +56,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - Service functions (`api/auth/service.rs`, future feature services) must not import axum or sqlx. They take trait objects, return domain error enums.
 - `impl IntoResponse for FooError` lives in `handlers.rs` (same crate, separate from service logic) — HTTP concerns stay in the handler layer.
 - `RepositoryError` variants (`Conflict`, `Internal`) are matched in service functions and mapped to feature-specific errors (e.g. `AuthError::EmailAlreadyExists`).
+- External HTTP integrations (for example OpenFIGI or Yahoo Finance) should be represented as small trait-backed adapters injected into `AppState`. Service functions depend on the trait, not on `reqwest` clients directly.
 
 **Adding a new feature (e.g. Portfolios):**
 1. Add `PortfolioRepository` trait to `domain::traits`.
@@ -117,6 +118,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - Middleware stack order in `ServiceBuilder` is outermost-to-innermost (first added = outermost).
 - **AppState**: All handlers use `State<AppState>` — never `State<PgPool>` directly. `AppState` holds the pool and JWT secret. When constructing `AppState`, compute any values from `AppConfig` that would cause a partial-move error (e.g. `server_address()`) before consuming config fields into `AppState`.
 - **JWT extractor**: Protected handlers use the `AuthenticatedUser` extractor (implements `FromRequestParts`) which validates the Bearer token and exposes `user_id: Uuid`. No DB hit required for JWT verification.
+- **Shared reference data**: Endpoints for shared resources such as `assets` still require JWT authentication by default, but they do not perform ownership filtering because the records are global.
 - **Paginated list endpoints — local schema type required**: `domain::PaginationMeta` cannot derive `ToSchema` (the domain crate has no utoipa dependency). Each feature that exposes a paginated list endpoint must define a local `PaginationMetaResponse` struct in its `handlers.rs` that mirrors `PaginationMeta` and derives `ToSchema`. The `From<PaginatedResult<T>>` impl on the paginated response type converts the domain type to the local schema type.
 - **Handler validation error pattern**: When a handler can fail with both a garde validation error and a service error, define a `pub(crate) <Feature>HandlerError` enum in `handlers.rs` that has `Validation(String)` and `Service(<Feature>Error)` variants, both implementing `IntoResponse`. Use this as the `Err` type so the handler returns a single named error type. See `portfolios/handlers.rs` → `PortfolioHandlerError` as the template.
 - **Ownership isolation**: Handlers that operate on a resource owned by a user must return 404 (not 403) when the resource does not exist *or* belongs to a different user. This prevents leaking the existence of other users' data. Implement the check in the service layer by calling `find_by_id` and filtering on `user_id`.
@@ -179,6 +181,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - These implicitly cover the `db` layer (repositories, migrations, constraints). No separate db tests for the MVP.
 - Treat integration tests as part of each feature task's done criteria, not as a later polish pass.
 - Maintain a shared API integration harness in `crates/api/tests/` that builds the real Axum app with real repositories and test configuration.
+- When a feature depends on an external HTTP service, inject a stub implementation through the shared test harness so integration tests remain deterministic and offline.
 - Prefer one integration test file per feature (for example `auth.rs`, `users.rs`, `portfolios.rs`) instead of one large catch-all suite.
 - The harness should start PostgreSQL automatically with `testcontainers`, run migrations, and expose helpers for common authenticated flows.
 - For protected resources, the minimum coverage matrix is: happy path, validation failure, unauthenticated request, invalid token when relevant, not found, and ownership isolation when relevant.
@@ -226,7 +229,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2.1a: Auth integration tests retrofit
 - [x] 2.2a: Authenticated user integration tests retrofit
 - [x] 2.3a: Portfolio integration tests retrofit
-- [ ] 2c: Assets (CRUD, OpenFIGI integration)
+- [x] 2c: Assets (CRUD, OpenFIGI integration)
 - [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [ ] 2e: Positions (on-the-fly calculation, closed position flag)
 - [ ] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)

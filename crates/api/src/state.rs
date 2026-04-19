@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use domain::{PortfolioRepository, RefreshTokenRepository, UserRepository};
+use domain::{AssetRepository, PortfolioRepository, RefreshTokenRepository, UserRepository};
+
+use crate::assets::service::AssetTickerLookup;
 
 /// Application state available to all request handlers via [`axum::extract::State`].
 ///
@@ -19,6 +21,10 @@ pub struct AppState {
     pub refresh_token_repo: Arc<dyn RefreshTokenRepository>,
     /// Portfolio storage (port).
     pub portfolio_repo: Arc<dyn PortfolioRepository>,
+    /// Shared asset storage (port).
+    pub asset_repo: Arc<dyn AssetRepository>,
+    /// External ISIN-to-ticker lookup adapter.
+    pub asset_ticker_lookup: Arc<dyn AssetTickerLookup>,
     /// HS256 signing secret for JWT access tokens.
     pub jwt_secret: String,
 }

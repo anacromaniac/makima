@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
-use api::{AppState, MIGRATOR, auth::jwt::Claims, build_app, build_app_state};
+use std::{collections::HashMap, sync::Arc};
+
+use api::{
+    AppState, MIGRATOR, assets::service::AssetTickerLookup, auth::jwt::Claims, build_app,
+    build_app_state_with_lookup,
+};
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -35,6 +40,10 @@ pub struct TestApp {
 
 impl TestApp {
     pub async fn new() -> Self {
+        Self::new_with_asset_lookup(Arc::new(StaticAssetTickerLookup::empty())).await
+    }
+
+    pub async fn new_with_asset_lookup(asset_ticker_lookup: Arc<dyn AssetTickerLookup>) -> Self {
         let postgres = Postgres::default()
             .start()
             .await
@@ -61,7 +70,8 @@ impl TestApp {
             .await
             .expect("failed to run migrations for test container");
 
-        let state = build_app_state(pool, TEST_JWT_SECRET.to_string());
+        let state =
+            build_app_state_with_lookup(pool, TEST_JWT_SECRET.to_string(), asset_ticker_lookup);
         let app = build_app(state.clone(), &["http://localhost:3000".to_string()]);
 
         Self {
@@ -143,6 +153,11 @@ impl TestApp {
         .await
     }
 
+    pub async fn create_asset(&self, access_token: &str, body: Value) -> Response<Body> {
+        self.request_json_with_token(Method::POST, "/api/v1/assets", access_token, body)
+            .await
+    }
+
     pub async fn cleanup(mut self) {
         self.app.take();
         self.state.pool.close().await;
@@ -179,6 +194,36 @@ impl TestApp {
             .oneshot(request)
             .await
             .expect("request execution failed")
+    }
+}
+
+pub struct StaticAssetTickerLookup {
+    by_isin: HashMap<String, Option<String>>,
+}
+
+impl StaticAssetTickerLookup {
+    pub fn empty() -> Self {
+        Self {
+            by_isin: HashMap::new(),
+        }
+    }
+
+    pub fn with_mapping(
+        entries: impl IntoIterator<Item = (impl Into<String>, Option<&'static str>)>,
+    ) -> Self {
+        let by_isin = entries
+            .into_iter()
+            .map(|(isin, ticker)| (isin.into(), ticker.map(str::to_string)))
+            .collect();
+
+        Self { by_isin }
+    }
+}
+
+#[async_trait::async_trait]
+impl AssetTickerLookup for StaticAssetTickerLookup {
+    async fn lookup_yahoo_ticker(&self, isin: &str) -> Option<String> {
+        self.by_isin.get(isin).cloned().flatten()
     }
 }
 

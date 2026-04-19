@@ -7,6 +7,7 @@ edition.workspace = true
 # Workspace dependencies
 domain.workspace = true
 db.workspace = true
+price-fetcher.workspace = true
 
 # External dependencies
 uuid.workspace = true
@@ -16,6 +17,7 @@ thiserror.workspace = true
 chrono.workspace = true
 rust_decimal.workspace = true
 garde.workspace = true
+async-trait.workspace = true
 
 # Database
 sqlx.workspace = true

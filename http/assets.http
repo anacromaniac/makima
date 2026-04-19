@@ -1,0 +1,33 @@
+### List assets
+GET http://localhost:3000/api/v1/assets?page=1&limit=25&asset_class=Stock&search=world
+Authorization: Bearer {{access_token}}
+
+### Get asset by ISIN
+GET http://localhost:3000/api/v1/assets/IE00BK5BQT80
+Authorization: Bearer {{access_token}}
+
+### Create asset
+POST http://localhost:3000/api/v1/assets
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "isin": "IE00BK5BQT80",
+  "name": "Vanguard FTSE All-World UCITS ETF",
+  "asset_class": "Stock",
+  "currency": "EUR",
+  "exchange": "Milan"
+}
+
+### Update asset
+PUT http://localhost:3000/api/v1/assets/IE00BK5BQT80
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "name": "Vanguard FTSE All-World UCITS ETF USD",
+  "asset_class": "Stock",
+  "currency": "EUR",
+  "exchange": "Milan",
+  "yahoo_ticker": "VWCE.MI"
+}

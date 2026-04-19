@@ -4,6 +4,7 @@
 //! It also exposes the reusable application builder used by both the production binary and
 //! integration tests.
 
+pub mod assets;
 pub mod auth;
 pub mod portfolios;
 mod state;
@@ -19,6 +20,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::get,
 };
+use price_fetcher::openfigi::OpenFigiClient;
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::Migrator;
 use tower::ServiceBuilder;
@@ -107,6 +109,17 @@ impl AppConfig {
 
 /// Build the shared application state with concrete PostgreSQL repository adapters.
 pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
+    let openfigi_client =
+        OpenFigiClient::from_env().expect("failed to construct OpenFIGI client from environment");
+    build_app_state_with_lookup(pool, jwt_secret, Arc::new(openfigi_client))
+}
+
+/// Build the shared application state with an injected ticker lookup adapter.
+pub fn build_app_state_with_lookup(
+    pool: sqlx::PgPool,
+    jwt_secret: String,
+    asset_ticker_lookup: Arc<dyn assets::service::AssetTickerLookup>,
+) -> AppState {
     let user_repo = Arc::new(db::repositories::user_repo::PgUserRepository::new(
         pool.clone(),
     ));
@@ -114,12 +127,17 @@ pub fn build_app_state(pool: sqlx::PgPool, jwt_secret: String) -> AppState {
         Arc::new(db::repositories::refresh_token_repo::PgRefreshTokenRepository::new(pool.clone()));
     let portfolio_repo =
         Arc::new(db::repositories::portfolio_repo::PgPortfolioRepository::new(pool.clone()));
+    let asset_repo = Arc::new(db::repositories::asset_repo::PgAssetRepository::new(
+        pool.clone(),
+    ));
 
     AppState {
         pool,
         user_repo,
         refresh_token_repo,
         portfolio_repo,
+        asset_repo,
+        asset_ticker_lookup,
         jwt_secret,
     }
 }
@@ -143,6 +161,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         .merge(auth::handlers::auth_router())
         .merge(users::handlers::users_router())
         .merge(portfolios::handlers::portfolios_router())
+        .merge(assets::handlers::assets_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(app_state)
         .layer(middleware)
@@ -160,6 +179,10 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         auth::handlers::refresh,
         auth::handlers::change_password,
         users::handlers::get_me,
+        assets::handlers::list_assets,
+        assets::handlers::get_asset,
+        assets::handlers::create_asset,
+        assets::handlers::update_asset,
         portfolios::handlers::list_portfolios,
         portfolios::handlers::create_portfolio,
         portfolios::handlers::get_portfolio,
@@ -175,6 +198,11 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         auth::dto::ChangePasswordRequest,
         auth::dto::TokenResponse,
         users::dto::UserResponse,
+        assets::dto::CreateAssetRequest,
+        assets::dto::UpdateAssetRequest,
+        assets::dto::AssetResponse,
+        assets::handlers::PaginatedAssetResponse,
+        assets::handlers::PaginationMetaResponse,
         portfolios::dto::CreatePortfolioRequest,
         portfolios::dto::UpdatePortfolioRequest,
         portfolios::dto::PortfolioResponse,

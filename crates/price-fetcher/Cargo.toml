@@ -15,3 +15,10 @@ thiserror.workspace = true
 chrono.workspace = true
 rust_decimal.workspace = true
 garde.workspace = true
+async-trait.workspace = true
+
+# HTTP client
+reqwest.workspace = true
+
+# Structured logging
+tracing.workspace = true
