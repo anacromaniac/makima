@@ -87,6 +87,8 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - tower-http features: use specific compression features (`compression-gzip`, `compression-deflate`) instead of generic `compression`.
 - tower-http `util` feature is required for `ServiceBuilderExt` extension methods.
 - TimeoutLayer::new() is deprecated; use `TimeoutLayer::with_status_code()` instead.
+- utoipa requires `features = ["uuid", "chrono"]` in the api crate to support `Uuid` and `DateTime<Utc>` fields in `#[derive(ToSchema)]`.
+- `AuthenticatedUser` derives `Debug` (it only contains a `Uuid`) so handlers accepting it can be annotated with `#[tracing::instrument]`.
 
 ### Database
 - All schema changes go through sqlx migrations (`sqlx migrate add <name>`).

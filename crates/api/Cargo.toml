@@ -35,7 +35,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "compression-gzip", "compression-deflate", "cors", "request-id", "timeout", "limit", "util"] }
 
 # OpenAPI
-utoipa = "5.4"
+utoipa = { version = "5.4", features = ["uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 # Auth

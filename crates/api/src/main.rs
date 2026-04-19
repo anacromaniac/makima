@@ -9,6 +9,7 @@
 
 mod auth;
 mod state;
+mod users;
 
 use std::sync::Arc;
 
@@ -55,6 +56,7 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
         auth::handlers::login,
         auth::handlers::refresh,
         auth::handlers::change_password,
+        users::handlers::get_me,
     ),
     components(schemas(
         HealthResponse,
@@ -64,6 +66,7 @@ static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
         auth::dto::RefreshRequest,
         auth::dto::ChangePasswordRequest,
         auth::dto::TokenResponse,
+        users::dto::UserResponse,
     )),
     modifiers(&SecurityAddon),
     info(
@@ -354,6 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .merge(auth::handlers::auth_router())
+        .merge(users::handlers::users_router())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .with_state(app_state)
         .layer(middleware)

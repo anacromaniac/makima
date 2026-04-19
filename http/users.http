@@ -1,0 +1,20 @@
+### User profile endpoints — Makima API
+### Base URL: http://localhost:3000
+
+@base = http://localhost:3000
+
+### Get current user profile
+# Replace <access_token> with the JWT returned from register or login.
+GET {{base}}/api/v1/users/me
+Authorization: Bearer <access_token>
+
+###
+
+### Get current user profile — no token (expects 401)
+GET {{base}}/api/v1/users/me
+
+###
+
+### Get current user profile — invalid token (expects 401)
+GET {{base}}/api/v1/users/me
+Authorization: Bearer invalid.token.here
