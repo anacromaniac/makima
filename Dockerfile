@@ -55,7 +55,7 @@ RUN chown -R makima:makima /app
 USER makima
 
 # Set environment defaults
-ENV RUST_LOG=makima=info
+ENV RUST_LOG=info
 
 # Expose the API port
 EXPOSE 3000
