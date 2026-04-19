@@ -10,6 +10,8 @@
 mod auth;
 mod state;
 
+use std::sync::Arc;
+
 use axum::{
     Router,
     extract::State,
@@ -315,8 +317,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_addr = config.server_address();
     let cors_layer = build_cors_layer(&config.cors_allowed_origins);
 
+    // Construct concrete repository implementations (adapters) and wrap in Arc
+    // so they can be stored as trait objects in AppState.
+    let user_repo = Arc::new(db::repositories::user_repo::PgUserRepository::new(
+        pool.clone(),
+    ));
+    let refresh_token_repo =
+        Arc::new(db::repositories::refresh_token_repo::PgRefreshTokenRepository::new(pool.clone()));
+
     let app_state = AppState {
         pool,
+        user_repo,
+        refresh_token_repo,
         jwt_secret: config.jwt_secret,
     };
 

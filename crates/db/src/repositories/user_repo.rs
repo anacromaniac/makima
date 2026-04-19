@@ -1,7 +1,8 @@
-//! Repository for user-related database operations.
+//! PostgreSQL implementation of the [`domain::UserRepository`] port.
 
+use async_trait::async_trait;
 use chrono::Utc;
-use domain::User;
+use domain::{RepositoryError, User, UserRepository};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -28,18 +29,21 @@ impl From<UserRow> for User {
     }
 }
 
-/// Provides database access for the `users` table.
-pub struct UserRepository;
+/// PostgreSQL-backed implementation of [`UserRepository`].
+pub struct PgUserRepository {
+    pool: PgPool,
+}
 
-impl UserRepository {
-    /// Persist a new user with the given email and pre-hashed password.
-    ///
-    /// Returns `Err` with database error code `23505` on duplicate email.
-    pub async fn create(
-        pool: &PgPool,
-        email: &str,
-        password_hash: &str,
-    ) -> Result<User, sqlx::Error> {
+impl PgUserRepository {
+    /// Create a new repository backed by the given connection pool.
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl UserRepository for PgUserRepository {
+    async fn create(&self, email: &str, password_hash: &str) -> Result<User, RepositoryError> {
         let id = Uuid::now_v7();
         let now = Utc::now();
         sqlx::query_as::<_, UserRow>(
@@ -51,48 +55,52 @@ impl UserRepository {
         .bind(email)
         .bind(password_hash)
         .bind(now)
-        .fetch_one(pool)
+        .fetch_one(&self.pool)
         .await
         .map(Into::into)
+        .map_err(|e| {
+            if let sqlx::Error::Database(ref db_err) = e
+                && db_err.code().as_deref() == Some("23505")
+            {
+                return RepositoryError::Conflict("email already registered".to_string());
+            }
+            RepositoryError::Internal(e.to_string())
+        })
     }
 
-    /// Find a user by email address.
-    pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
         sqlx::query_as::<_, UserRow>(
             "SELECT id, email, password_hash, created_at, updated_at
              FROM users WHERE email = $1",
         )
         .bind(email)
-        .fetch_optional(pool)
+        .fetch_optional(&self.pool)
         .await
         .map(|opt| opt.map(Into::into))
+        .map_err(|e| RepositoryError::Internal(e.to_string()))
     }
 
-    /// Find a user by primary key.
-    pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
+    async fn find_by_id(&self, id: Uuid) -> Result<Option<User>, RepositoryError> {
         sqlx::query_as::<_, UserRow>(
             "SELECT id, email, password_hash, created_at, updated_at
              FROM users WHERE id = $1",
         )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(&self.pool)
         .await
         .map(|opt| opt.map(Into::into))
+        .map_err(|e| RepositoryError::Internal(e.to_string()))
     }
 
-    /// Update the stored password hash for a user.
-    pub async fn update_password(
-        pool: &PgPool,
-        id: Uuid,
-        new_password_hash: &str,
-    ) -> Result<(), sqlx::Error> {
+    async fn update_password(&self, id: Uuid, new_hash: &str) -> Result<(), RepositoryError> {
         let now = Utc::now();
         sqlx::query("UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3")
-            .bind(new_password_hash)
+            .bind(new_hash)
             .bind(now)
             .bind(id)
-            .execute(pool)
-            .await?;
-        Ok(())
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|e| RepositoryError::Internal(e.to_string()))
     }
 }

@@ -47,5 +47,8 @@ dotenvy = "0.15"
 # Async runtime
 tokio = { version = "1.52", features = ["full"] }
 
+# Async traits (required for dyn-compatible async trait objects)
+async-trait = "0.1"
+
 # Logging
 tracing = "0.1"

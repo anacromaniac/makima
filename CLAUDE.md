@@ -9,6 +9,7 @@ Deploy target: Docker on Raspberry Pi. Network access via Tailscale.
 - Axum (HTTP framework)
 - PostgreSQL (database)
 - sqlx (query layer, compile-time checked) + repository pattern
+- async-trait (dyn-compatible async repository traits)
 - argon2 (password hashing), jsonwebtoken (JWT)
 - tracing + tracing-subscriber (structured JSON logging)
 - reqwest (HTTP client for Yahoo Finance and OpenFIGI)
@@ -32,10 +33,33 @@ crates/
 
 ## Coding conventions
 
-### Architecture
-- Repository pattern: all database access goes through repository structs in the `db` crate. No raw sqlx calls outside repositories.
-- The `domain` crate must never import sqlx, axum, or any infrastructure crate. It defines traits that `db` implements.
+### Architecture — Ports and Adapters
+The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is the core; everything else is a plug-in.**
+
+**Layer rules (hard constraints):**
+- `domain` crate: zero dependencies on sqlx, axum, or any infrastructure crate. Defines domain models, business logic, and **repository traits** (the "ports").
+- `db` crate: implements domain repository traits using sqlx/PostgreSQL (the "adapters"). Converts `sqlx::Error` → `domain::RepositoryError` — sqlx never leaks out.
+- `api` crate: Axum handlers, DTOs, middleware. Depends on `domain` traits, not on concrete `db` types (except in `main.rs` for wiring). Service functions in `api` take `&dyn UserRepository` etc., never `&PgPool`.
 - DTOs (request/response types) live in `api`. Domain models live in `domain`. Never expose domain models directly in API responses.
+
+**Repository trait pattern:**
+- Traits with async methods are defined in `domain::traits` using `#[async_trait]`. Supertraits `Send + Sync` make them usable as `Arc<dyn Trait>`.
+- `db` crate provides `Pg*Repository` structs (e.g. `PgUserRepository { pool: PgPool }`) that implement these traits. Each maps storage errors to `RepositoryError`.
+- `AppState` holds `Arc<dyn UserRepository>`, `Arc<dyn RefreshTokenRepository>`, etc. — never raw `PgPool` for business logic. (`pool` is kept only for `/ready` health checks and migrations.)
+- `main.rs` is the **composition root**: the only place that names concrete `Pg*Repository` types and wires them into `AppState`.
+
+**Service / handler separation:**
+- Service functions (`api/auth/service.rs`, future feature services) must not import axum or sqlx. They take trait objects, return domain error enums.
+- `impl IntoResponse for FooError` lives in `handlers.rs` (same crate, separate from service logic) — HTTP concerns stay in the handler layer.
+- `RepositoryError` variants (`Conflict`, `Internal`) are matched in service functions and mapped to feature-specific errors (e.g. `AuthError::EmailAlreadyExists`).
+
+**Adding a new feature (e.g. Portfolios):**
+1. Add `PortfolioRepository` trait to `domain::traits`.
+2. Add `PgPortfolioRepository` in `db` implementing it.
+3. Add `portfolio_repo: Arc<dyn PortfolioRepository>` to `AppState`.
+4. Wire `PgPortfolioRepository::new(pool.clone())` in `main.rs`.
+5. Write service functions taking `&dyn PortfolioRepository`.
+6. Write handlers calling the service; add `impl IntoResponse for PortfolioError` in `handlers.rs`.
 
 ### Rust style
 - Use `thiserror` for domain error types, map to HTTP errors in `api` with `IntoResponse`.

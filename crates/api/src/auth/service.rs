@@ -1,14 +1,14 @@
 //! Auth service — business logic for registration, login, token refresh, and password change.
+//!
+//! This module has no axum or sqlx dependencies. It works exclusively through
+//! the [`domain::UserRepository`] and [`domain::RefreshTokenRepository`] ports.
 
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
     password_hash::{SaltString, rand_core::OsRng},
 };
-use axum::{Json, http::StatusCode, response::IntoResponse};
 use chrono::{Duration, Utc};
-use db::repositories::{refresh_token_repo::RefreshTokenRepository, user_repo::UserRepository};
-use domain::NewRefreshToken;
-use sqlx::PgPool;
+use domain::{NewRefreshToken, RefreshTokenRepository, RepositoryError, UserRepository};
 use uuid::Uuid;
 
 use crate::auth::{jwt, tokens};
@@ -37,9 +37,9 @@ pub enum AuthError {
     /// A previously rotated (stolen) refresh token was presented.
     #[error("token has been revoked")]
     TokenRevoked,
-    /// Underlying database error.
-    #[error("database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
+    /// Underlying repository error (storage failure).
+    #[error("repository error: {0}")]
+    Repository(RepositoryError),
     /// Argon2 hashing failure.
     #[error("password hashing error: {0}")]
     HashError(String),
@@ -48,66 +48,9 @@ pub enum AuthError {
     JwtError(#[from] jsonwebtoken::errors::Error),
 }
 
-impl IntoResponse for AuthError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, code, message): (StatusCode, &'static str, String) = match self {
-            AuthError::EmailAlreadyExists => (
-                StatusCode::CONFLICT,
-                "EMAIL_ALREADY_EXISTS",
-                "Email already registered".to_string(),
-            ),
-            AuthError::InvalidCredentials => (
-                StatusCode::UNAUTHORIZED,
-                "INVALID_CREDENTIALS",
-                "Invalid credentials".to_string(),
-            ),
-            AuthError::InvalidToken => (
-                StatusCode::UNAUTHORIZED,
-                "INVALID_TOKEN",
-                "Token is expired or invalid".to_string(),
-            ),
-            AuthError::TokenRevoked => (
-                StatusCode::UNAUTHORIZED,
-                "TOKEN_REVOKED",
-                "Token has been revoked — all sessions invalidated".to_string(),
-            ),
-            AuthError::DatabaseError(e) => {
-                tracing::error!("Auth database error: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Internal server error".to_string(),
-                )
-            }
-            AuthError::HashError(msg) => {
-                tracing::error!("Auth hash error: {msg}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Internal server error".to_string(),
-                )
-            }
-            AuthError::JwtError(e) => {
-                tracing::error!("Auth JWT error: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "Internal server error".to_string(),
-                )
-            }
-        };
-
-        (
-            status,
-            Json(serde_json::json!({ "code": code, "message": message })),
-        )
-            .into_response()
-    }
-}
-
 /// Create a fresh access + refresh token pair and persist the refresh token.
 async fn generate_token_pair(
-    pool: &PgPool,
+    token_repo: &dyn RefreshTokenRepository,
     user_id: Uuid,
     jwt_secret: &str,
 ) -> Result<TokenPair, AuthError> {
@@ -117,15 +60,14 @@ async fn generate_token_pair(
     let token_hash = tokens::hash_refresh_token(&refresh_token_str);
     let expires_at = Utc::now() + Duration::days(7);
 
-    RefreshTokenRepository::create(
-        pool,
-        &NewRefreshToken {
+    token_repo
+        .create(&NewRefreshToken {
             user_id,
             token_hash,
             expires_at,
-        },
-    )
-    .await?;
+        })
+        .await
+        .map_err(AuthError::Repository)?;
 
     Ok(TokenPair {
         access_token,
@@ -133,11 +75,12 @@ async fn generate_token_pair(
     })
 }
 
-/// Register a new user: validate, hash password, create user, return token pair.
+/// Register a new user: hash password, create user, return token pair.
 ///
 /// Returns [`AuthError::EmailAlreadyExists`] if the email is already taken.
 pub async fn register(
-    pool: &PgPool,
+    user_repo: &dyn UserRepository,
+    token_repo: &dyn RefreshTokenRepository,
     jwt_secret: &str,
     email: &str,
     password: &str,
@@ -147,32 +90,32 @@ pub async fn register(
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| AuthError::HashError(e.to_string()))?;
 
-    let user = UserRepository::create(pool, email, &hash.to_string())
+    let user = user_repo
+        .create(email, &hash.to_string())
         .await
-        .map_err(|e| {
-            if let sqlx::Error::Database(ref db_err) = e
-                && db_err.code().as_deref() == Some("23505")
-            {
-                return AuthError::EmailAlreadyExists;
-            }
-            AuthError::DatabaseError(e)
+        .map_err(|e| match e {
+            RepositoryError::Conflict(_) => AuthError::EmailAlreadyExists,
+            e => AuthError::Repository(e),
         })?;
 
-    generate_token_pair(pool, user.id, jwt_secret).await
+    generate_token_pair(token_repo, user.id, jwt_secret).await
 }
 
 /// Authenticate with email + password and return a token pair.
 ///
-/// Returns [`AuthError::InvalidCredentials`] for any wrong credential — email not found
-/// and wrong password produce the same error to prevent user enumeration.
+/// Returns [`AuthError::InvalidCredentials`] for any wrong credential to prevent
+/// user enumeration.
 pub async fn login(
-    pool: &PgPool,
+    user_repo: &dyn UserRepository,
+    token_repo: &dyn RefreshTokenRepository,
     jwt_secret: &str,
     email: &str,
     password: &str,
 ) -> Result<TokenPair, AuthError> {
-    let user = UserRepository::find_by_email(pool, email)
-        .await?
+    let user = user_repo
+        .find_by_email(email)
+        .await
+        .map_err(AuthError::Repository)?
         .ok_or(AuthError::InvalidCredentials)?;
 
     let hash =
@@ -182,22 +125,25 @@ pub async fn login(
         .verify_password(password.as_bytes(), &hash)
         .map_err(|_| AuthError::InvalidCredentials)?;
 
-    generate_token_pair(pool, user.id, jwt_secret).await
+    generate_token_pair(token_repo, user.id, jwt_secret).await
 }
 
 /// Exchange a valid refresh token for a new token pair (rotation).
 ///
-/// If the incoming token is already revoked (stolen token detection), **all** refresh
-/// tokens for that user are immediately revoked and [`AuthError::TokenRevoked`] is returned.
+/// If the incoming token is already revoked (stolen token detection), **all**
+/// refresh tokens for that user are immediately revoked and
+/// [`AuthError::TokenRevoked`] is returned.
 pub async fn refresh(
-    pool: &PgPool,
+    token_repo: &dyn RefreshTokenRepository,
     jwt_secret: &str,
     refresh_token: &str,
 ) -> Result<TokenPair, AuthError> {
     let token_hash = tokens::hash_refresh_token(refresh_token);
 
-    let record = RefreshTokenRepository::find_by_hash(pool, &token_hash)
-        .await?
+    let record = token_repo
+        .find_by_hash(&token_hash)
+        .await
+        .map_err(AuthError::Repository)?
         .ok_or(AuthError::InvalidToken)?;
 
     if record.expires_at < Utc::now() {
@@ -206,25 +152,35 @@ pub async fn refresh(
 
     // Stolen token detection: a previously rotated token was re-used.
     if record.revoked {
-        RefreshTokenRepository::revoke_all_for_user(pool, record.user_id).await?;
+        token_repo
+            .revoke_all_for_user(record.user_id)
+            .await
+            .map_err(AuthError::Repository)?;
         return Err(AuthError::TokenRevoked);
     }
 
-    RefreshTokenRepository::revoke(pool, record.id).await?;
-    generate_token_pair(pool, record.user_id, jwt_secret).await
+    token_repo
+        .revoke(record.id)
+        .await
+        .map_err(AuthError::Repository)?;
+
+    generate_token_pair(token_repo, record.user_id, jwt_secret).await
 }
 
 /// Change the authenticated user's password and revoke all refresh tokens.
 ///
 /// Returns [`AuthError::InvalidCredentials`] if `old_password` is wrong.
 pub async fn change_password(
-    pool: &PgPool,
+    user_repo: &dyn UserRepository,
+    token_repo: &dyn RefreshTokenRepository,
     user_id: Uuid,
     old_password: &str,
     new_password: &str,
 ) -> Result<(), AuthError> {
-    let user = UserRepository::find_by_id(pool, user_id)
-        .await?
+    let user = user_repo
+        .find_by_id(user_id)
+        .await
+        .map_err(AuthError::Repository)?
         .ok_or(AuthError::InvalidCredentials)?;
 
     let hash =
@@ -239,8 +195,15 @@ pub async fn change_password(
         .hash_password(new_password.as_bytes(), &salt)
         .map_err(|e| AuthError::HashError(e.to_string()))?;
 
-    UserRepository::update_password(pool, user_id, &new_hash.to_string()).await?;
-    RefreshTokenRepository::revoke_all_for_user(pool, user_id).await?;
+    user_repo
+        .update_password(user_id, &new_hash.to_string())
+        .await
+        .map_err(AuthError::Repository)?;
+
+    token_repo
+        .revoke_all_for_user(user_id)
+        .await
+        .map_err(AuthError::Repository)?;
 
     Ok(())
 }

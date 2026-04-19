@@ -15,6 +15,7 @@ thiserror.workspace = true
 chrono.workspace = true
 rust_decimal.workspace = true
 garde.workspace = true
+async-trait.workspace = true
 
 # Database
 sqlx.workspace = true

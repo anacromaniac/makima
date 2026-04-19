@@ -20,6 +20,7 @@ pub mod traits;
 
 // Convenience re-exports — consumers can write `domain::User` instead of
 // `domain::models::user::User`.
-pub use error::DomainError;
+pub use error::{DomainError, RepositoryError};
 pub use logic::*;
 pub use models::*;
+pub use traits::{BrokerImporter, RefreshTokenRepository, UserRepository};

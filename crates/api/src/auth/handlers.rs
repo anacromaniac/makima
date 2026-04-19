@@ -14,12 +14,73 @@ use crate::{
         dto::{
             ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, TokenResponse,
         },
-        service,
+        service::{self, AuthError},
     },
     state::AppState,
 };
 
 use super::AuthenticatedUser;
+
+// ── IntoResponse impl lives here so the service layer stays axum-free ────────
+
+impl IntoResponse for AuthError {
+    fn into_response(self) -> axum::response::Response {
+        let (status, code, message): (StatusCode, &'static str, String) = match self {
+            AuthError::EmailAlreadyExists => (
+                StatusCode::CONFLICT,
+                "EMAIL_ALREADY_EXISTS",
+                "Email already registered".to_string(),
+            ),
+            AuthError::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                "INVALID_CREDENTIALS",
+                "Invalid credentials".to_string(),
+            ),
+            AuthError::InvalidToken => (
+                StatusCode::UNAUTHORIZED,
+                "INVALID_TOKEN",
+                "Token is expired or invalid".to_string(),
+            ),
+            AuthError::TokenRevoked => (
+                StatusCode::UNAUTHORIZED,
+                "TOKEN_REVOKED",
+                "Token has been revoked — all sessions invalidated".to_string(),
+            ),
+            AuthError::Repository(e) => {
+                tracing::error!("Auth repository error: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Internal server error".to_string(),
+                )
+            }
+            AuthError::HashError(msg) => {
+                tracing::error!("Auth hash error: {msg}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Internal server error".to_string(),
+                )
+            }
+            AuthError::JwtError(e) => {
+                tracing::error!("Auth JWT error: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Internal server error".to_string(),
+                )
+            }
+        };
+
+        (
+            status,
+            Json(serde_json::json!({ "code": code, "message": message })),
+        )
+            .into_response()
+    }
+}
+
+// ── Router ────────────────────────────────────────────────────────────────────
 
 /// Build the auth sub-router mounted under `/api/v1/auth`.
 pub fn auth_router() -> Router<AppState> {
@@ -29,6 +90,8 @@ pub fn auth_router() -> Router<AppState> {
         .route("/api/v1/auth/refresh", post(refresh))
         .route("/api/v1/auth/password", put(change_password))
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// Register a new user account and return a token pair.
 #[utoipa::path(
@@ -45,7 +108,7 @@ pub fn auth_router() -> Router<AppState> {
 pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, service::AuthError> {
+) -> Result<impl IntoResponse, AuthError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -55,7 +118,8 @@ pub async fn register(
     }
 
     let pair = service::register(
-        &state.pool,
+        state.user_repo.as_ref(),
+        state.refresh_token_repo.as_ref(),
         &state.jwt_secret,
         &payload.email,
         &payload.password,
@@ -87,7 +151,7 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
-) -> Result<impl IntoResponse, service::AuthError> {
+) -> Result<impl IntoResponse, AuthError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -97,7 +161,8 @@ pub async fn login(
     }
 
     let pair = service::login(
-        &state.pool,
+        state.user_repo.as_ref(),
+        state.refresh_token_repo.as_ref(),
         &state.jwt_secret,
         &payload.email,
         &payload.password,
@@ -126,7 +191,7 @@ pub async fn login(
 pub async fn refresh(
     State(state): State<AppState>,
     Json(payload): Json<RefreshRequest>,
-) -> Result<impl IntoResponse, service::AuthError> {
+) -> Result<impl IntoResponse, AuthError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -135,7 +200,12 @@ pub async fn refresh(
             .into_response());
     }
 
-    let pair = service::refresh(&state.pool, &state.jwt_secret, &payload.refresh_token).await?;
+    let pair = service::refresh(
+        state.refresh_token_repo.as_ref(),
+        &state.jwt_secret,
+        &payload.refresh_token,
+    )
+    .await?;
 
     Ok(Json(TokenResponse {
         access_token: pair.access_token,
@@ -161,7 +231,7 @@ pub async fn change_password(
     State(state): State<AppState>,
     auth_user: AuthenticatedUser,
     Json(payload): Json<ChangePasswordRequest>,
-) -> Result<impl IntoResponse, service::AuthError> {
+) -> Result<impl IntoResponse, AuthError> {
     if let Err(e) = payload.validate() {
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -171,7 +241,8 @@ pub async fn change_password(
     }
 
     service::change_password(
-        &state.pool,
+        state.user_repo.as_ref(),
+        state.refresh_token_repo.as_ref(),
         auth_user.user_id,
         &payload.old_password,
         &payload.new_password,
