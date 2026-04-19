@@ -1,12 +1,13 @@
 //! PostgreSQL implementation of the [`domain::AssetRepository`] port.
 
+use crate::error::map_sqlx_error;
 use async_trait::async_trait;
 use chrono::Utc;
 use domain::{
     Asset, AssetClass, AssetFilters, AssetRepository, NewAsset, PaginatedResult, PaginationMeta,
     PaginationParams, RepositoryError, UpdateAsset,
 };
-use sqlx::{Error as SqlxError, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Internal row type mirroring the `assets` table.
@@ -50,15 +51,6 @@ impl PgAssetRepository {
     /// Create a new repository backed by the given connection pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-}
-
-fn map_sqlx_error(error: SqlxError) -> RepositoryError {
-    match error {
-        SqlxError::Database(db_error) if db_error.is_unique_violation() => {
-            RepositoryError::Conflict(db_error.message().to_string())
-        }
-        other => RepositoryError::Internal(other.to_string()),
     }
 }
 

@@ -1,11 +1,12 @@
 //! PostgreSQL implementation of the [`domain::PriceRepository`] port.
 
+use crate::error::map_sqlx_error;
 use chrono::{NaiveDate, Utc};
 use domain::{
     NewPriceRecord, PaginatedResult, PaginationMeta, PaginationParams, PriceRecord,
     PriceRepository, PriceSource, RepositoryError,
 };
-use sqlx::{Error as SqlxError, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Internal row type mirroring the `price_history` table.
@@ -43,15 +44,6 @@ impl PgPriceRepository {
     /// Create a new repository backed by the given connection pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-}
-
-fn map_sqlx_error(error: SqlxError) -> RepositoryError {
-    match error {
-        SqlxError::Database(db_error) if db_error.is_unique_violation() => {
-            RepositoryError::Conflict(db_error.message().to_string())
-        }
-        other => RepositoryError::Internal(other.to_string()),
     }
 }
 

@@ -1,5 +1,6 @@
 //! PostgreSQL implementation of the [`domain::TransactionRepository`] port.
 
+use crate::error::map_sqlx_error;
 use async_trait::async_trait;
 use chrono::{NaiveDate, Utc};
 use domain::{
@@ -7,7 +8,7 @@ use domain::{
     Transaction, TransactionFilters, TransactionRepository, TransactionType, UpdateTransaction,
 };
 use rust_decimal::Decimal;
-use sqlx::{Error as SqlxError, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Internal row type mirroring the `transactions` table.
@@ -69,15 +70,6 @@ impl PgTransactionRepository {
     /// Create a new repository backed by the given connection pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-}
-
-fn map_sqlx_error(error: SqlxError) -> RepositoryError {
-    match error {
-        SqlxError::Database(db_error) if db_error.is_unique_violation() => {
-            RepositoryError::Conflict(db_error.message().to_string())
-        }
-        other => RepositoryError::Internal(other.to_string()),
     }
 }
 

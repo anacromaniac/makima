@@ -1,12 +1,13 @@
 //! PostgreSQL implementation of the [`domain::PositionRepository`] port.
 
+use crate::error::map_sqlx_error;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::Utc;
 use domain::{Asset, Position, PositionRepository, RepositoryError, calculate_gain_loss};
 use rust_decimal::Decimal;
-use sqlx::{Error as SqlxError, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Internal row type containing aggregated position state and asset metadata.
@@ -41,15 +42,6 @@ impl PgPositionRepository {
     /// Create a new repository backed by the given connection pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-}
-
-fn map_sqlx_error(error: SqlxError) -> RepositoryError {
-    match error {
-        SqlxError::Database(db_error) if db_error.is_unique_violation() => {
-            RepositoryError::Conflict(db_error.message().to_string())
-        }
-        other => RepositoryError::Internal(other.to_string()),
     }
 }
 

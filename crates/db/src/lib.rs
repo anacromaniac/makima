@@ -11,4 +11,5 @@
 //! - No raw sqlx calls outside repositories
 //! - Migrations are embedded in the binary via `sqlx::migrate!()`
 
+mod error;
 pub mod repositories;
