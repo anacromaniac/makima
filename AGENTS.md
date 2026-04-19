@@ -222,10 +222,10 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 ### Phase 2: Features — IN PROGRESS
 - [x] 2a: Auth (users, register, login, JWT, middleware)
 - [x] 2b: Portfolios (CRUD)
-- [ ] 2.0: API integration test harness
-- [ ] 2.1a: Auth integration tests retrofit
-- [ ] 2.2a: Authenticated user integration tests retrofit
-- [ ] 2.3a: Portfolio integration tests retrofit
+- [x] 2.0: API integration test harness
+- [x] 2.1a: Auth integration tests retrofit
+- [x] 2.2a: Authenticated user integration tests retrofit
+- [x] 2.3a: Portfolio integration tests retrofit
 - [ ] 2c: Assets (CRUD, OpenFIGI integration)
 - [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [ ] 2e: Positions (on-the-fly calculation, closed position flag)
