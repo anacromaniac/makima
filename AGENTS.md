@@ -132,6 +132,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - **Asset price backfill and scheduled refresh**: When an asset gains a Yahoo ticker for the first time (during create or update), the application service is responsible for triggering best-effort historical backfill through an injected price adapter. The daily scheduled refresh job is infrastructure wiring started from `crates/api/src/main.rs` with concrete repositories and Yahoo adapters; keep cron/job setup out of handlers.
 - **Broker import normalization**: Broker parsers return normalized parsed rows, not `NewTransaction` directly. The application import service is responsible for portfolio assignment, asset resolution/creation, FX lookup, duplicate detection, chronological ordering, and final `NewTransaction` construction.
 - **Broker import ordering**: Imported broker rows must be normalized to chronological order before no-short-sell validation and persistence. Real broker exports may be newest-first.
+- **Portfolio analytics summary semantics**: For `GET /api/v1/portfolios/{id}/summary`, an actually empty portfolio returns zero totals and an empty allocation. If the portfolio has positions but none can be valued because prices or FX rates are missing, the total fields return `null` and the response includes warnings describing the excluded positions.
 
 ### Configuration
 - Environment variables only (12-factor). No config files with secrets.
@@ -232,7 +233,7 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] BrokerImporter trait definition
 - [x] Unit tests for core domain logic
 
-### Phase 2: Features — IN PROGRESS
+### Phase 2: Features — DONE
 - [x] 2a: Auth (users, register, login, JWT, middleware)
 - [x] 2b: Portfolios (CRUD)
 - [x] 2.0: API integration test harness
@@ -245,6 +246,6 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - [x] 2f: Prices (Yahoo Finance client, daily job, manual refresh, price history, backfill)
 - [x] 2g: Exchange rates (Yahoo Finance, daily job)
 - [x] 2h: Broker import (upload endpoint, Fineco parser, BG Saxo parser)
-- [ ] 2i: Analytics (gain/loss, asset allocation)
+- [x] 2i: Analytics (gain/loss, asset allocation)
 
 ### Phase 3: Polish — NOT STARTED

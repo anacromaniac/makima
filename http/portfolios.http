@@ -42,6 +42,12 @@ Authorization: Bearer {{access_token}}
 
 ###
 
+### Get portfolio analytics summary
+GET {{base_url}}/api/v1/portfolios/{{portfolio_id}}/summary
+Authorization: Bearer {{access_token}}
+
+###
+
 ### Update portfolio
 PUT {{base_url}}/api/v1/portfolios/{{portfolio_id}}
 Content-Type: application/json

@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use application::{
+    analytics::AnalyticsService,
     assets::{AssetPriceBackfill, AssetService, AssetTickerLookup},
     auth::AuthService,
     import::ImportService,
@@ -367,7 +368,7 @@ where
     ));
     let exchange_rate_repo = Arc::new(PgExchangeRateRepository::new(pool.clone()));
     let persisted_exchange_rate_lookup = Arc::new(PersistedExchangeRateLookup {
-        exchange_rate_repo,
+        exchange_rate_repo: exchange_rate_repo.clone(),
         live_lookup: exchange_rate_lookup,
     });
     let transaction_repo =
@@ -385,6 +386,11 @@ where
         price_adapters.clone(),
     ));
     let portfolio_service = Arc::new(PortfolioService::new(portfolio_repo.clone()));
+    let analytics_service = Arc::new(AnalyticsService::new(
+        portfolio_repo.clone(),
+        position_repo.clone(),
+        exchange_rate_repo.clone(),
+    ));
     let position_service = Arc::new(PositionService::new(portfolio_repo.clone(), position_repo));
     let price_service = Arc::new(PriceService::new(
         asset_repo.clone(),
@@ -424,6 +430,7 @@ where
         auth_service,
         asset_service,
         portfolio_service,
+        analytics_service,
         position_service,
         price_service,
         transaction_service,
@@ -483,6 +490,7 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         portfolios::handlers::list_portfolios,
         portfolios::handlers::create_portfolio,
         portfolios::handlers::get_portfolio,
+        portfolios::handlers::get_portfolio_summary,
         portfolios::handlers::update_portfolio,
         portfolios::handlers::delete_portfolio,
         positions::handlers::list_positions,
@@ -512,9 +520,12 @@ pub fn build_app(app_state: AppState, cors_allowed_origins: &[String]) -> Router
         assets::handlers::PaginationMetaResponse,
         portfolios::dto::CreatePortfolioRequest,
         portfolios::dto::UpdatePortfolioRequest,
+        portfolios::dto::AssetAllocationEntry,
         portfolios::dto::PortfolioResponse,
+        portfolios::dto::PortfolioSummaryResponse,
         portfolios::handlers::PaginatedPortfolioResponse,
         portfolios::handlers::PaginationMetaResponse,
+        assets::dto::ApiAssetClass,
         positions::dto::PositionResponse,
         import::dto::ImportErrorResponse,
         import::dto::ImportResponse,

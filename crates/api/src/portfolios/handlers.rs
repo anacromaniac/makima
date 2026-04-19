@@ -1,6 +1,6 @@
 //! HTTP handlers for portfolio CRUD endpoints.
 
-use application::portfolios::PortfolioError;
+use application::{analytics::AnalyticsError, portfolios::PortfolioError};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -15,7 +15,10 @@ use uuid::Uuid;
 
 use crate::{
     auth::AuthenticatedUser,
-    portfolios::dto::{CreatePortfolioRequest, PortfolioResponse, UpdatePortfolioRequest},
+    portfolios::dto::{
+        AssetAllocationEntry, CreatePortfolioRequest, PortfolioResponse, PortfolioSummaryResponse,
+        UpdatePortfolioRequest,
+    },
     state::AppState,
 };
 
@@ -44,11 +47,36 @@ fn portfolio_error_response(error: PortfolioError) -> Response {
         .into_response()
 }
 
+fn analytics_error_response(error: AnalyticsError) -> Response {
+    let (status, code, message): (StatusCode, &'static str, String) = match error {
+        AnalyticsError::NotFound => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "Portfolio not found".to_string(),
+        ),
+        AnalyticsError::Repository(error) => {
+            tracing::error!("Portfolio analytics repository error: {error}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                "Internal server error".to_string(),
+            )
+        }
+    };
+
+    (
+        status,
+        Json(serde_json::json!({ "code": code, "message": message })),
+    )
+        .into_response()
+}
+
 /// Unified error for handlers that perform validation before calling the service.
 #[derive(Debug)]
 pub(crate) enum PortfolioHandlerError {
     Validation(String),
     Service(PortfolioError),
+    Analytics(AnalyticsError),
 }
 
 impl IntoResponse for PortfolioHandlerError {
@@ -60,6 +88,7 @@ impl IntoResponse for PortfolioHandlerError {
             )
                 .into_response(),
             Self::Service(e) => portfolio_error_response(e),
+            Self::Analytics(e) => analytics_error_response(e),
         }
     }
 }
@@ -67,6 +96,12 @@ impl IntoResponse for PortfolioHandlerError {
 impl From<PortfolioError> for PortfolioHandlerError {
     fn from(e: PortfolioError) -> Self {
         Self::Service(e)
+    }
+}
+
+impl From<AnalyticsError> for PortfolioHandlerError {
+    fn from(e: AnalyticsError) -> Self {
+        Self::Analytics(e)
     }
 }
 
@@ -149,6 +184,10 @@ pub fn portfolios_router() -> Router<AppState> {
             get(get_portfolio)
                 .put(update_portfolio)
                 .delete(delete_portfolio),
+        )
+        .route(
+            "/api/v1/portfolios/{id}/summary",
+            get(get_portfolio_summary),
         )
 }
 
@@ -234,6 +273,47 @@ pub(crate) async fn get_portfolio(
 ) -> Result<Json<PortfolioResponse>, PortfolioHandlerError> {
     let portfolio = state.portfolio_service.get(auth_user.user_id, id).await?;
     Ok(Json(PortfolioResponse::from(portfolio)))
+}
+
+/// Get analytics summary for a single portfolio in EUR.
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{id}/summary",
+    params(("id" = Uuid, Path, description = "Portfolio ID")),
+    responses(
+        (status = 200, description = "Portfolio analytics summary", body = PortfolioSummaryResponse),
+        (status = 401, description = "Missing or invalid token"),
+        (status = 404, description = "Portfolio not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "portfolios"
+)]
+#[tracing::instrument(skip(state))]
+pub(crate) async fn get_portfolio_summary(
+    State(state): State<AppState>,
+    auth_user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PortfolioSummaryResponse>, PortfolioHandlerError> {
+    let summary = state
+        .analytics_service
+        .summary(auth_user.user_id, id)
+        .await?;
+
+    Ok(Json(PortfolioSummaryResponse {
+        total_value: summary.total_value,
+        total_gain_loss_absolute: summary.total_gain_loss_absolute,
+        total_gain_loss_percentage: summary.total_gain_loss_percentage,
+        asset_allocation: summary
+            .asset_allocation
+            .into_iter()
+            .map(|entry| AssetAllocationEntry {
+                asset_class: entry.asset_class.into(),
+                value: entry.value,
+                percentage: entry.percentage,
+            })
+            .collect(),
+        warnings: summary.warnings,
+    }))
 }
 
 /// Update a portfolio's name and description.

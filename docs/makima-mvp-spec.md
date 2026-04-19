@@ -161,6 +161,7 @@ REST API backend written in Rust, deployed via Docker on Raspberry Pi, for track
 - **Gain/loss per position**: calculated on-the-fly as `(current_price × quantity) - (average_cost × quantity)`. Returned both as absolute value and percentage.
 - **Total portfolio gain/loss**: sum of gain/loss across all open positions, converted to EUR.
 - **Asset allocation by class**: percentage distribution of portfolio value by asset class (Stock, Bond, Commodity, etc.).
+- **Summary response semantics**: an empty portfolio returns zero totals and empty allocation. If a portfolio has positions but none can be valued because current prices or FX rates are missing, total summary fields are `null` and the response includes warnings for the excluded positions.
 - All calculations are on-the-fly, no persisted snapshots.
 
 ### 4.10 Operational endpoints
@@ -209,7 +210,7 @@ REST API backend written in Rust, deployed via Docker on Raspberry Pi, for track
 - `GET    /api/v1/portfolios/{id}` — Portfolio detail.
 - `PUT    /api/v1/portfolios/{id}` — Update portfolio.
 - `DELETE /api/v1/portfolios/{id}` — Delete portfolio.
-- `GET    /api/v1/portfolios/{id}/summary` — Summary: total value, gain/loss, asset allocation.
+- `GET    /api/v1/portfolios/{id}/summary` — Summary: total value, gain/loss, asset allocation, and warnings for positions excluded due to missing price/FX data.
 - `GET    /api/v1/portfolios/{id}/positions` — List positions (with filter `?show_closed=true/false`).
 
 ### Transactions

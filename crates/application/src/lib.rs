@@ -4,6 +4,7 @@
 //! It sits between the domain core and concrete adapters such as HTTP, SQL,
 //! and external API clients.
 
+pub mod analytics;
 pub mod assets;
 pub mod auth;
 pub mod import;
