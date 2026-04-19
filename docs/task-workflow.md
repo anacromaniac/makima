@@ -13,6 +13,9 @@ Use this workflow when implementing a task from the `tasks/` directory or when c
 - Verify up-to-date API usage for external crates before adopting new patterns.
 - Write `///` doc comments on all public items.
 - Add tests required by the task's done criteria.
+- For API features, treat integration tests as part of the feature itself, not as a later polish task.
+- When the feature exposes HTTP endpoints, add or update the feature's integration tests under `crates/api/tests/` in the same task.
+- Reuse the shared API integration test harness instead of duplicating app/database setup in each test module.
 
 ## 3. Verify
 Run the full verification set before reporting completion:
@@ -29,6 +32,12 @@ If any check fails, fix the issue and re-run it. Do not report completion until 
 
 ## 4. Update HTTP examples
 - If the task adds new API endpoints, create or update the corresponding `.http` file in `http/` with example requests for each new endpoint.
+
+## API integration test expectations
+- Keep one integration test file per feature in `crates/api/tests/` (for example `auth.rs`, `users.rs`, `portfolios.rs`).
+- Cover the minimum matrix for each protected resource: happy path, validation failure, unauthenticated request, invalid token when relevant, not found, and ownership isolation when relevant.
+- Prefer real request/response assertions through the Axum app with a dedicated PostgreSQL test database.
+- Do not mark a feature task complete until its endpoint behavior is covered end-to-end.
 
 ## 5. Retrospective before repo-doc updates
 Before updating repo guidance or specs, present a brief retrospective to the user:

@@ -177,6 +177,12 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 - Use a dedicated PostgreSQL test database. Each test suite runs migrations on setup and cleans up after.
 - Cover: authentication flows, CRUD operations, ownership isolation (user A cannot see user B's data), error responses for invalid input.
 - These implicitly cover the `db` layer (repositories, migrations, constraints). No separate db tests for the MVP.
+- Treat integration tests as part of each feature task's done criteria, not as a later polish pass.
+- Maintain a shared API integration harness in `crates/api/tests/` that builds the real Axum app with real repositories and test configuration.
+- Prefer one integration test file per feature (for example `auth.rs`, `users.rs`, `portfolios.rs`) instead of one large catch-all suite.
+- The harness should provision an isolated PostgreSQL database per test case or test module, run migrations, and expose helpers for common authenticated flows.
+- For protected resources, the minimum coverage matrix is: happy path, validation failure, unauthenticated request, invalid token when relevant, not found, and ownership isolation when relevant.
+- New Phase 2 endpoint work is not complete until its integration tests are added or updated in the same task.
 
 ### Naming
 - Test functions: `test_<what>_<expected_outcome>` (e.g. `test_login_with_wrong_password_returns_401`).
@@ -216,6 +222,10 @@ The project follows a strict ports-and-adapters (hexagonal) pattern. **Domain is
 ### Phase 2: Features — IN PROGRESS
 - [x] 2a: Auth (users, register, login, JWT, middleware)
 - [x] 2b: Portfolios (CRUD)
+- [ ] 2.0: API integration test harness
+- [ ] 2.1a: Auth integration tests retrofit
+- [ ] 2.2a: Authenticated user integration tests retrofit
+- [ ] 2.3a: Portfolio integration tests retrofit
 - [ ] 2c: Assets (CRUD, OpenFIGI integration)
 - [ ] 2d: Transactions (CRUD, multi-currency, no-short-sell validation)
 - [ ] 2e: Positions (on-the-fly calculation, closed position flag)
